@@ -57,12 +57,18 @@ Arena/
    pip install -r requirements.txt
    ```
 
-4. Run migrations:
+4. Set up environment variables:
+   ```bash
+   cp .env.example .env
+   ```
+   Edit `.env` with your configuration if needed.
+
+5. Run migrations:
    ```bash
    python manage.py migrate
    ```
 
-5. Start the development server:
+6. Start the development server:
    ```bash
    python manage.py runserver
    ```

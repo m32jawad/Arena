@@ -13,7 +13,7 @@ import {
   RefreshCw,
 } from 'lucide-react';
 
-const Stations = () => {
+const Stations = ({ readOnly = false }) => {
   const [query] = useState('');
 
   const controllers = [
@@ -68,9 +68,11 @@ const Stations = () => {
       <div className="flex justify-between items-center mb-6">
         <h1 className="text-2xl font-semibold text-gray-900"></h1>
 
-           <button className="px-3 py-2 border rounded bg-[#CB30E0] text-white text-sm">
-              <span className="text-sm">Add New Controller</span>
-            </button>
+           {!readOnly && (
+             <button className="px-3 py-2 border rounded bg-[#CB30E0] text-white text-sm">
+                <span className="text-sm">Add New Controller</span>
+              </button>
+           )}
       </div>
 
       {/* Controllers */}
@@ -81,17 +83,19 @@ const Stations = () => {
               <div>
                 <h2 className="text-lg font-medium text-gray-900">{ctl.name}</h2>
               </div>
-              <div className="flex items-center">
-                <button aria-label="Delete" className="p-2 text-red-600 ">
-                  <Trash2 size={16} />
-                </button>
-                <button aria-label="Edit" className="p-2 text-gray-600 ">
-                  <Edit2 size={16} />
-                </button>
-                <button aria-label="Refresh" className="p-2 text-gray-600 ">
-                  <RefreshCw size={16} />
-                </button>
-              </div>
+              {!readOnly && (
+                <div className="flex items-center">
+                  <button aria-label="Delete" className="p-2 text-red-600 ">
+                    <Trash2 size={16} />
+                  </button>
+                  <button aria-label="Edit" className="p-2 text-gray-600 ">
+                    <Edit2 size={16} />
+                  </button>
+                  <button aria-label="Refresh" className="p-2 text-gray-600 ">
+                    <RefreshCw size={16} />
+                  </button>
+                </div>
+              )}
             </div>
 
             {/* First row with 4 boxes */}

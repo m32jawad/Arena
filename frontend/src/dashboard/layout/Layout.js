@@ -7,8 +7,10 @@ import {
   Headphones,
   Search,
   Settings as SettingsIcon,
+  LogOut,
 } from "lucide-react";
 
+import { useAuth } from '../../context/AuthContext';
 import Dashboard from '../components/Dashboard';
 import Pending from '../components/Pending';
 import Sessions from '../components/Sessions';
@@ -44,7 +46,9 @@ function NavItem({ icon, label, badge, active, status, onClick }) {
 }
 
 export default function Layout() {
-  const [active, setActive] = useState('Dashboard');
+  const { user, logout } = useAuth();
+  const isSuperuser = user?.is_superuser;
+  const [active, setActive] = useState(isSuperuser ? 'Dashboard' : 'Pending');
 
   return (
     <div className="flex min-h-screen bg-gray-50 font-sans">
@@ -61,17 +65,28 @@ export default function Layout() {
           </div>
 
           <nav className="space-y-1 px-4">
-            <NavItem icon={<LayoutDashboard size={20} />} label="Dashboard" active={active==='Dashboard'} onClick={() => setActive('Dashboard')} />
+            {isSuperuser && (
+              <NavItem icon={<LayoutDashboard size={20} />} label="Dashboard" active={active==='Dashboard'} onClick={() => setActive('Dashboard')} />
+            )}
             <NavItem icon={<Clock size={20} />} label="Pending" badge="10" active={active==='Pending'} onClick={() => setActive('Pending')} />
             <NavItem icon={<Users size={20} />} label="Sessions" badge="8" active={active==='Sessions'} onClick={() => setActive('Sessions')} />
             <NavItem icon={<Clock size={20} />} label="Stations" active={active==='Stations'} onClick={() => setActive('Stations')} />
-            <NavItem icon={<Trophy size={20} />} label="Leaderboard" active={active==='Leaderboard'} onClick={() => setActive('Leaderboard')} />
+            {isSuperuser && (
+              <NavItem icon={<Trophy size={20} />} label="Leaderboard" active={active==='Leaderboard'} onClick={() => setActive('Leaderboard')} />
+            )}
           </nav>
         </div>
 
         <div className="p-4 space-y-3">
-          <NavItem icon={<SettingsIcon size={20} />} label="Settings" active={active==='Settings'} onClick={() => setActive('Settings')} />
+          {isSuperuser && (
+            <NavItem icon={<SettingsIcon size={20} />} label="Settings" active={active==='Settings'} onClick={() => setActive('Settings')} />
+          )}
           <NavItem icon={<Headphones size={20} />} label="Support" status />
+          <NavItem
+            icon={<LogOut size={20} />}
+            label="Logout"
+            onClick={logout}
+          />
           <div className="flex items-center gap-3 mt-6 p-3">
             <img
               src="https://i.pravatar.cc/40"
@@ -79,8 +94,8 @@ export default function Layout() {
               alt="User avatar"
             />
             <div>
-              <p className="text-sm font-medium text-gray-800">Olivia Rhye</p>
-              <p className="text-xs text-gray-500">olivia@untitledui.com</p>
+              <p className="text-sm font-medium text-gray-800">{user?.username}</p>
+              <p className="text-xs text-gray-500">{user?.email || (isSuperuser ? 'Superuser' : 'Staff')}</p>
             </div>
           </div>
         </div>
@@ -93,7 +108,7 @@ export default function Layout() {
           <div className="flex items-center gap-3">
             <img src="https://i.pravatar.cc/28" alt="avatar" className="w-7 h-7 rounded-full" />
             <div>
-              <div className="text-sm text-gray-500">Olivia Rhye <span className="text-gray-300">/</span> <span className="font-medium">{active}</span></div>
+              <div className="text-sm text-gray-500">{user?.username} <span className="text-gray-300">/</span> <span className="font-medium">{active}</span></div>
               <h1 className="text-2xl font-semibold text-gray-800">{active}</h1>
             </div>
           </div>
@@ -107,12 +122,12 @@ export default function Layout() {
 
         {/* Page content */}
         <div>
-          {active === 'Dashboard' && <Dashboard />}
+          {active === 'Dashboard' && isSuperuser && <Dashboard />}
           {active === 'Pending' && <Pending />}
           {active === 'Sessions' && <Sessions />}
-          {active === 'Stations' && <Stations />}
-          {active === 'Leaderboard' && <Leaderboard />}
-          {active === 'Settings' && <Settings />}
+          {active === 'Stations' && <Stations readOnly={!isSuperuser} />}
+          {active === 'Leaderboard' && isSuperuser && <Leaderboard />}
+          {active === 'Settings' && isSuperuser && <Settings />}
           {active !== 'Dashboard' && active !== 'Pending' && active !== 'Sessions' && active !== 'Stations' && active !== 'Leaderboard' && active !== 'Settings' && (
             <div className="text-gray-500">{active} page content not implemented yet.</div>
           )}

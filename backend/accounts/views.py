@@ -6,7 +6,7 @@ from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework import status
 
-from .models import Storyline
+from .models import Storyline, GeneralSetting, DashboardTheme
 
 
 @api_view(['POST'])
@@ -158,6 +158,46 @@ def staff_toggle_block(request, pk):
     return Response(_serialize_user(user))
 
 
+# ── General Settings (singleton) ──
+
+def _serialize_general_setting(gs):
+    return {
+        'arena_name': gs.arena_name,
+        'time_zone': gs.time_zone,
+        'date_format': gs.date_format,
+        'session_length': gs.session_length,
+        'session_presets': gs.session_presets,
+        'allow_extension': gs.allow_extension,
+        'allow_reduction': gs.allow_reduction,
+    }
+
+
+@api_view(['GET', 'PUT'])
+@permission_classes([IsAuthenticated])
+def general_settings_view(request):
+    if not request.user.is_superuser:
+        return Response({'error': 'Permission denied.'}, status=status.HTTP_403_FORBIDDEN)
+
+    gs = GeneralSetting.load()
+
+    if request.method == 'GET':
+        return Response(_serialize_general_setting(gs))
+
+    # PUT – update
+    data = request.data
+    gs.arena_name = data.get('arena_name', gs.arena_name)
+    gs.time_zone = data.get('time_zone', gs.time_zone)
+    gs.date_format = data.get('date_format', gs.date_format)
+    gs.session_length = data.get('session_length', gs.session_length)
+    gs.session_presets = data.get('session_presets', gs.session_presets)
+    if 'allow_extension' in data:
+        gs.allow_extension = data['allow_extension']
+    if 'allow_reduction' in data:
+        gs.allow_reduction = data['allow_reduction']
+    gs.save()
+    return Response(_serialize_general_setting(gs))
+
+
 # ── Storyline CRUD ──
 
 def _serialize_storyline(s, request=None):
@@ -226,3 +266,58 @@ def storyline_detail(request, pk):
     if request.method == 'DELETE':
         storyline.delete()
         return Response({'message': 'Storyline deleted.'}, status=status.HTTP_204_NO_CONTENT)
+
+
+# ── Dashboard Theme (singleton) ──
+
+def _serialize_theme(t, request=None):
+    image_url = ''
+    if t.background_image:
+        image_url = request.build_absolute_uri(t.background_image.url) if request else t.background_image.url
+    return {
+        'background_type': t.background_type,
+        'background_value': t.background_value,
+        'background_image': image_url,
+        'sidebar_bg': t.sidebar_bg,
+        'sidebar_text': t.sidebar_text,
+        'sidebar_active_bg': t.sidebar_active_bg,
+        'sidebar_active_text': t.sidebar_active_text,
+        'primary_color': t.primary_color,
+        'heading_font': t.heading_font,
+        'text_font': t.text_font,
+    }
+
+
+@api_view(['GET', 'PUT'])
+@permission_classes([IsAuthenticated])
+@parser_classes([MultiPartParser, FormParser])
+def dashboard_theme_view(request):
+    theme = DashboardTheme.load()
+
+    if request.method == 'GET':
+        return Response(_serialize_theme(theme, request))
+
+    # PUT — only superusers may update
+    if not request.user.is_superuser:
+        return Response({'error': 'Permission denied.'}, status=status.HTTP_403_FORBIDDEN)
+
+    data = request.data
+    theme.background_type = data.get('background_type', theme.background_type)
+    theme.background_value = data.get('background_value', theme.background_value)
+    theme.sidebar_bg = data.get('sidebar_bg', theme.sidebar_bg)
+    theme.sidebar_text = data.get('sidebar_text', theme.sidebar_text)
+    theme.sidebar_active_bg = data.get('sidebar_active_bg', theme.sidebar_active_bg)
+    theme.sidebar_active_text = data.get('sidebar_active_text', theme.sidebar_active_text)
+    theme.primary_color = data.get('primary_color', theme.primary_color)
+    theme.heading_font = data.get('heading_font', theme.heading_font)
+    theme.text_font = data.get('text_font', theme.text_font)
+
+    image = request.FILES.get('background_image')
+    if image:
+        theme.background_image = image
+    # Allow clearing the image when switching away from image type
+    if data.get('clear_background_image') == 'true':
+        theme.background_image = None
+
+    theme.save()
+    return Response(_serialize_theme(theme, request))

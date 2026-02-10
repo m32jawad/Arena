@@ -12,8 +12,13 @@ import {
   Edit2,
   RefreshCw,
 } from 'lucide-react';
+import { useTheme } from '../../context/ThemeContext';
 
 const Stations = ({ readOnly = false }) => {
+  const { theme } = useTheme();
+  const headingFont = theme.heading_font || 'inherit';
+  const textFont = theme.text_font || 'inherit';
+  const primaryColor = theme.primary_color || '#CB30E0';
   const [query] = useState('');
 
   const controllers = [
@@ -64,12 +69,12 @@ const Stations = ({ readOnly = false }) => {
   const filteredStations = stations.filter((s) => (`${s.name} ${s.id}`).toLowerCase().includes(query.toLowerCase()));
 
   return (
-    <div className="p-6">
+    <div className="p-6" style={{ fontFamily: textFont }}>
       <div className="flex justify-between items-center mb-6">
-        <h1 className="text-2xl font-semibold text-gray-900"></h1>
+        <h1 className="text-2xl font-semibold" style={{ color: theme.sidebar_active_text, fontFamily: headingFont }}></h1>
 
            {!readOnly && (
-             <button className="px-3 py-2 border rounded bg-[#CB30E0] text-white text-sm">
+             <button className="px-3 py-2 border rounded text-white text-sm" style={{ backgroundColor: primaryColor }}>
                 <span className="text-sm">Add New Controller</span>
               </button>
            )}
@@ -78,10 +83,10 @@ const Stations = ({ readOnly = false }) => {
       {/* Controllers */}
       <div className="space-y-6">
         {controllers.map((ctl) => (
-          <div key={ctl.id} className="bg-white rounded-lg border border-gray-200 p-6">
+          <div key={ctl.id} className="rounded-lg border p-6" style={{ backgroundColor: theme.sidebar_bg, borderColor: theme.sidebar_active_bg }}>
             <div className="flex items-center gap-4 mb-4">
               <div>
-                <h2 className="text-lg font-medium text-gray-900">{ctl.name}</h2>
+                <h2 className="text-lg font-medium" style={{ color: theme.sidebar_active_text, fontFamily: headingFont }}>{ctl.name}</h2>
               </div>
               {!readOnly && (
                 <div className="flex items-center">
@@ -101,19 +106,19 @@ const Stations = ({ readOnly = false }) => {
             {/* First row with 4 boxes */}
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-4">
               {ctl.metrics.slice(0, 4).map((m, i) => (
-                <div key={i} className="p-4 bg-white rounded-lg border border-gray-100 shadow-sm relative">
+                <div key={i} className="p-4 rounded-lg border shadow-sm relative" style={{ backgroundColor: theme.sidebar_bg, borderColor: theme.sidebar_active_bg }}>
                   <div className="absolute top-3 right-3">
-                    <div className="inline-flex items-center gap-2 bg-white border border-gray-100 rounded-md px-2 py-1 text-xs text-green-600">
+                    <div className="inline-flex items-center gap-2 border rounded-md px-2 py-1 text-xs text-green-600" style={{ backgroundColor: theme.sidebar_bg, borderColor: theme.sidebar_active_bg }}>
                       <ArrowUpRight size={14} className="text-green-500" />
                       <span className="font-medium">2.8%</span>
                     </div>
                   </div>
                   <div className="flex items-start">
                     <div className="flex items-center gap-3">
-                      <div className="p-2 rounded-md bg-gray-50">{m.icon}</div>
+                      <div className="p-2 rounded-md" style={{ backgroundColor: theme.sidebar_active_bg }}>{m.icon}</div>
                       <div>
-                        <div className="text-xs font-medium text-gray-500">{m.label}</div>
-                        <div className="text-xl font-semibold text-gray-900 mt-1">{m.value}</div>
+                        <div className="text-xs font-medium" style={{ color: theme.sidebar_text }}>{m.label}</div>
+                        <div className="text-xl font-semibold mt-1" style={{ color: theme.sidebar_active_text }}>{m.value}</div>
                       </div>
                     </div>
                   </div>
@@ -124,19 +129,19 @@ const Stations = ({ readOnly = false }) => {
             {/* Second row with 3 boxes (Controller 1) or 3 boxes (Controller 2) */}
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
               {ctl.metrics.slice(4).map((m, i) => (
-                <div key={i} className="p-4 bg-white rounded-lg border border-gray-100 shadow-sm relative">
+                <div key={i} className="p-4 rounded-lg border shadow-sm relative" style={{ backgroundColor: theme.sidebar_bg, borderColor: theme.sidebar_active_bg }}>
                   <div className="absolute top-3 right-3">
-                    <div className="inline-flex items-center gap-2 bg-white border border-gray-100 rounded-md px-2 py-1 text-xs text-green-600">
+                    <div className="inline-flex items-center gap-2 border rounded-md px-2 py-1 text-xs text-green-600" style={{ backgroundColor: theme.sidebar_bg, borderColor: theme.sidebar_active_bg }}>
                       <ArrowUpRight size={14} className="text-green-500" />
                       <span className="font-medium">2.8%</span>
                     </div>
                   </div>
                   <div className="flex items-start">
                     <div className="flex items-center gap-3">
-                      <div className="p-2 rounded-md bg-gray-50">{m.icon}</div>
+                      <div className="p-2 rounded-md" style={{ backgroundColor: theme.sidebar_active_bg }}>{m.icon}</div>
                       <div>
-                        <div className="text-xs font-medium text-gray-500">{m.label}</div>
-                        <div className="text-xl font-semibold text-gray-900 mt-1">{m.value}</div>
+                        <div className="text-xs font-medium" style={{ color: theme.sidebar_text }}>{m.label}</div>
+                        <div className="text-xl font-semibold mt-1" style={{ color: theme.sidebar_active_text }}>{m.value}</div>
                       </div>
                     </div>
                   </div>

@@ -1,7 +1,12 @@
 import React, { useState } from 'react';
 import { Search, ChevronDown, MoreVertical, X, Clock, User } from 'lucide-react';
+import { useTheme } from '../../context/ThemeContext';
 
 const Sessions = () => {
+  const { theme } = useTheme();
+  const headingFont = theme.heading_font || 'inherit';
+  const textFont = theme.text_font || 'inherit';
+  const primaryColor = theme.primary_color || '#CB30E0';
   const [activeTab, setActiveTab] = useState('live');
   const [timeFilter, setTimeFilter] = useState('last7days');
   
@@ -109,30 +114,24 @@ const Sessions = () => {
   );
 
   return (
-    <div className="p-6">
+    <div className="p-6" style={{ fontFamily: textFont }}>
       {/* Header with title, tabs, and search */}
       <div className="mb-6">
-        <h1 className="text-2xl font-semibold text-gray-900 mb-4">Sessions</h1>
+        <h1 className="text-2xl font-semibold mb-4" style={{ color: theme.sidebar_active_text, fontFamily: headingFont }}>Sessions</h1>
         
         {/* Tabs */}
         <div className="flex items-center gap-4 mb-6">
           <button
             onClick={() => setActiveTab('live')}
-            className={`px-4 py-2 text-sm font-medium rounded-lg transition-colors ${
-              activeTab === 'live'
-                ? 'bg-blue-600 text-white'
-                : 'text-gray-600 hover:text-gray-900 hover:bg-gray-100'
-            }`}
+            className={`px-4 py-2 text-sm font-medium rounded-lg transition-colors`}
+            style={activeTab === 'live' ? { backgroundColor: primaryColor, color: '#fff' } : { color: theme.sidebar_text }}
           >
             Live Sessions
           </button>
           <button
             onClick={() => setActiveTab('ended')}
-            className={`px-4 py-2 text-sm font-medium rounded-lg transition-colors ${
-              activeTab === 'ended'
-                ? 'bg-blue-600 text-white'
-                : 'text-gray-600 hover:text-gray-900 hover:bg-gray-100'
-            }`}
+            className={`px-4 py-2 text-sm font-medium rounded-lg transition-colors`}
+            style={activeTab === 'ended' ? { backgroundColor: primaryColor, color: '#fff' } : { color: theme.sidebar_text }}
           >
             Ended Sessions
           </button>
@@ -143,13 +142,14 @@ const Sessions = () => {
           <span></span>
           <div className="relative max-w-md">
             <div className="relative">
-              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" size={18} />
+              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2" size={18} style={{ color: theme.sidebar_text }} />
               <input
                 type="text"
                 placeholder="Search"
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
-                className="w-full pl-10 pr-4 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                className="w-full pl-10 pr-4 py-2.5 border rounded-lg focus:outline-none"
+                style={{ backgroundColor: theme.sidebar_bg, borderColor: theme.sidebar_active_bg, color: theme.sidebar_active_text }}
               />
             </div>
           </div>
@@ -160,7 +160,8 @@ const Sessions = () => {
               <select
                 value={timeFilter}
                 onChange={(e) => setTimeFilter(e.target.value)}
-                className="appearance-none pl-4 pr-10 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm text-gray-700"
+                className="appearance-none pl-4 pr-10 py-2.5 border rounded-lg focus:outline-none text-sm"
+                style={{ backgroundColor: theme.sidebar_bg, borderColor: theme.sidebar_active_bg, color: theme.sidebar_active_text }}
               >
                 <option value="last7days">Last 7 days</option>
                 <option value="today">Today</option>
@@ -168,16 +169,16 @@ const Sessions = () => {
                 <option value="last30days">Last 30 days</option>
                 <option value="custom">Custom range</option>
               </select>
-              <ChevronDown className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 pointer-events-none" size={18} />
+              <ChevronDown className="absolute right-3 top-1/2 transform -translate-y-1/2 pointer-events-none" size={18} style={{ color: theme.sidebar_text }} />
             </div>
           )}
         </div>
       </div>
 
       {/* Table */}
-      <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
+      <div className="rounded-lg border overflow-hidden" style={{ backgroundColor: theme.sidebar_bg, borderColor: theme.sidebar_active_bg }}>
         {/* Table header */}
-        <div className="grid grid-cols-12 gap-4 px-6 py-3.5 border-b border-gray-200 bg-gray-50 text-xs font-medium text-gray-600">
+        <div className="grid grid-cols-12 gap-4 px-6 py-3.5 border-b text-xs font-medium" style={{ backgroundColor: theme.sidebar_active_bg, borderColor: theme.sidebar_active_bg, color: theme.sidebar_text }}>
           <div className="col-span-5">Team Name</div>
           <div className="col-span-3">RFID Number</div>
           <div className="col-span-2">{activeTab === 'live' ? 'Remaining Time' : 'Ended Time'}</div>
@@ -187,12 +188,12 @@ const Sessions = () => {
         {/* Table rows */}
         <div>
           {filteredSessions.length === 0 ? (
-            <div className="p-8 text-center text-gray-500">
+            <div className="p-8 text-center" style={{ color: theme.sidebar_text }}>
               {activeTab === 'live' ? 'No live sessions' : 'No ended sessions'}
             </div>
           ) : (
             filteredSessions.map((session, index) => (
-              <div key={index} className="grid grid-cols-12 gap-4 px-6 py-4 border-b border-gray-100 hover:bg-gray-50">
+              <div key={index} className="grid grid-cols-12 gap-4 px-6 py-4 border-b" style={{ borderColor: theme.sidebar_active_bg + '66' }}>
                 <div className="col-span-5 flex items-center gap-3">
                   <div className="relative">
                     <img 
@@ -205,13 +206,13 @@ const Sessions = () => {
                     )}
                   </div>
                   <div>
-                    <div className="text-sm font-medium text-gray-900">{session.name}</div>
-                    <div className="text-xs text-gray-500">{session.username}</div>
+                    <div className="text-sm font-medium" style={{ color: theme.sidebar_active_text }}>{session.name}</div>
+                    <div className="text-xs" style={{ color: theme.sidebar_text }}>{session.username}</div>
                   </div>
                 </div>
                 
                 <div className="col-span-3 flex items-center">
-                  <div className="text-sm text-gray-600">{session.rfid}</div>
+                  <div className="text-sm" style={{ color: theme.sidebar_text }}>{session.rfid}</div>
                 </div>
                 
                 <div className="col-span-2 flex items-center">
@@ -248,20 +249,20 @@ const Sessions = () => {
         </div>
 
         {/* Sessions pagination */}
-        <div className="px-6 py-4 flex items-center justify-between border-t border-gray-200">
+        <div className="px-6 py-4 flex items-center justify-between border-t" style={{ borderColor: theme.sidebar_active_bg }}>
           <div>
-            <button className="flex items-center gap-2 px-3 py-2 border rounded text-sm text-gray-600">‹ Previous</button>
+            <button className="flex items-center gap-2 px-3 py-2 border rounded text-sm" style={{ borderColor: theme.sidebar_active_bg, color: theme.sidebar_text }}>‹ Previous</button>
           </div>
 
-          <div className="flex items-center gap-2 text-sm text-gray-600">
-            <button className="px-2 py-1 rounded bg-white border">1</button>
+          <div className="flex items-center gap-2 text-sm" style={{ color: theme.sidebar_text }}>
+            <button className="px-2 py-1 rounded border text-white" style={{ backgroundColor: primaryColor, borderColor: primaryColor }}>1</button>
             <button className="px-2 py-1 rounded">2</button>
             <button className="px-2 py-1 rounded">3</button>
             <button className="px-2 py-1 rounded">10</button>
           </div>
 
           <div>
-            <button className="flex items-center gap-2 px-3 py-2 border rounded text-sm text-gray-600">Next ›</button>
+            <button className="flex items-center gap-2 px-3 py-2 border rounded text-sm" style={{ borderColor: theme.sidebar_active_bg, color: theme.sidebar_text }}>Next ›</button>
           </div>
         </div>
       </div>

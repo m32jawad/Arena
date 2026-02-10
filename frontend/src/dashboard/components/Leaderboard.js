@@ -1,7 +1,12 @@
 import React, { useState } from 'react';
 import { Search, ChevronLeft, ChevronRight, Eye, Edit, Slash, ChevronDown } from 'lucide-react';
+import { useTheme } from '../../context/ThemeContext';
 
 const Leaderboard = () => {
+  const { theme } = useTheme();
+  const headingFont = theme.heading_font || 'inherit';
+  const textFont = theme.text_font || 'inherit';
+  const primaryColor = theme.primary_color || '#CB30E0';
   const initialTeams = [
     { name: 'Team A', username: '@teamA', points: 23000, remaining: '3hr 34 mins', email: 'teamA@example.com', startTime: '2:50 PM', rfid: '2344535', avatar: 'https://i.pravatar.cc/40?img=32' },
     { name: 'Team B', username: '@teamB', points: 22300, remaining: '5hr 34 mins', email: 'teamB@example.com', startTime: '2:23 PM', rfid: '4674634', avatar: 'https://i.pravatar.cc/40?img=4' },
@@ -36,42 +41,43 @@ const Leaderboard = () => {
   const topThree = teams.slice(0, 3);
 
   return (
-    <div className="p-6">
+    <div className="p-6" style={{ fontFamily: textFont }}>
       <div className="flex justify-between items-center mb-6">
         <div>
-          <h1 className="text-2xl font-semibold text-gray-900 mb-1">Leader Board</h1>
+          <h1 className="text-2xl font-semibold mb-1" style={{ color: theme.sidebar_active_text, fontFamily: headingFont }}>Leader Board</h1>
         </div>
         
-        <button className="bg-purple-600 text-white px-4 py-2 rounded-lg font-semibold">Add New Controller</button>
+        <button className="text-white px-4 py-2 rounded-lg font-semibold" style={{ backgroundColor: primaryColor }}>Add New Controller</button>
       </div>
 
-      <h1 className="text-md font-semibold text-gray-900 mb-1">Top 3 Teams</h1>
+      <h1 className="text-md font-semibold mb-1" style={{ color: theme.sidebar_active_text, fontFamily: headingFont }}>Top 3 Teams</h1>
       <div className="grid grid-cols-3 gap-4 mb-6">
         {topThree.map((t, i) => (
-          <div key={i} className="bg-white rounded-lg border border-gray-200 p-4 flex flex-col justify-between">
-            <div className="text-sm text-gray-500">{t.name}</div>
-            <div className="text-3xl font-bold text-gray-900 mt-2">{t.points} <span className='text-[20px]'>points</span></div>
-            <div className="text-xs text-gray-500 mt-3 flex items-center justify-end">
-              <span className="px-2 py-1 border border-green-200 text-green-600 rounded">{t.remaining}</span>
+          <div key={i} className="rounded-lg border p-4 flex flex-col justify-between" style={{ backgroundColor: theme.sidebar_bg, borderColor: theme.sidebar_active_bg }}>
+            <div className="text-sm" style={{ color: theme.sidebar_text }}>{t.name}</div>
+            <div className="text-3xl font-bold mt-2" style={{ color: theme.sidebar_active_text, fontFamily: headingFont }}>{t.points} <span className='text-[20px]'>points</span></div>
+            <div className="text-xs mt-3 flex items-center justify-end">
+              <span className="px-2 py-1 border border-green-200 text-green-600 rounded" style={{ backgroundColor: theme.sidebar_bg }}>{t.remaining}</span>
             </div>
           </div>
         ))}
       </div>
 
-      <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
+      <div className="rounded-lg border overflow-hidden" style={{ backgroundColor: theme.sidebar_bg, borderColor: theme.sidebar_active_bg }}>
         <div className='flex items-center justify-between'>
-          <h1 className="text-md font-semibold text-gray-900 mb-1 px-6 py-4">Detail View</h1>
+          <h1 className="text-md font-semibold mb-1 px-6 py-4" style={{ color: theme.sidebar_active_text, fontFamily: headingFont }}>Detail View</h1>
           
           <div className="flex items-center gap-4 pr-6">
             <div className="relative max-w-md">
               <div className="relative">
-                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" size={18} />
+                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2" size={18} style={{ color: theme.sidebar_text }} />
                 <input
                   type="text"
                   placeholder="Search"
                   value={query}
                   onChange={(e) => setQuery(e.target.value)}
-                  className="w-full pl-10 pr-4 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  className="w-full pl-10 pr-4 py-2.5 border rounded-lg focus:outline-none"
+                  style={{ backgroundColor: theme.sidebar_bg, borderColor: theme.sidebar_active_bg, color: theme.sidebar_active_text }}
                 />
               </div>
             </div>
@@ -80,7 +86,8 @@ const Leaderboard = () => {
               <select
                 value={timeFilter}
                 onChange={(e) => setTimeFilter(e.target.value)}
-                className="appearance-none pl-4 pr-10 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm text-gray-700"
+                className="appearance-none pl-4 pr-10 py-2.5 border rounded-lg focus:outline-none text-sm"
+                style={{ backgroundColor: theme.sidebar_bg, borderColor: theme.sidebar_active_bg, color: theme.sidebar_active_text }}
               >
                 <option value="last7days">Last 7 days</option>
                 <option value="today">Today</option>
@@ -88,12 +95,12 @@ const Leaderboard = () => {
                 <option value="last30days">Last 30 days</option>
                 <option value="custom">Custom range</option>
               </select>
-              <ChevronDown className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 pointer-events-none" size={18} />
+              <ChevronDown className="absolute right-3 top-1/2 transform -translate-y-1/2 pointer-events-none" size={18} style={{ color: theme.sidebar_text }} />
             </div>
           </div>
         </div>
         
-        <div className="grid grid-cols-12 gap-4 px-6 py-3.5 border-b border-gray-200 bg-gray-50 text-xs font-medium text-gray-600">
+        <div className="grid grid-cols-12 gap-4 px-6 py-3.5 border-b text-xs font-medium" style={{ backgroundColor: theme.sidebar_active_bg, borderColor: theme.sidebar_active_bg, color: theme.sidebar_text }}>
           <div className="col-span-1"></div>
           <div className="col-span-3">Team Name</div>
           <div className="col-span-2">Email</div>
@@ -105,10 +112,10 @@ const Leaderboard = () => {
 
         <div>
           {filtered.length === 0 ? (
-            <div className="p-8 text-center text-gray-500">No teams found</div>
+            <div className="p-8 text-center" style={{ color: theme.sidebar_text }}>No teams found</div>
           ) : (
             filtered.map((item, index) => (
-              <div key={index} className="grid grid-cols-12 gap-4 px-6 py-4 border-b border-gray-100 hover:bg-gray-50 items-center">
+              <div key={index} className="grid grid-cols-12 gap-4 px-6 py-4 border-b items-center" style={{ borderColor: theme.sidebar_active_bg + '66' }}>
                 <div className="col-span-1 flex items-center">
                   <input type="checkbox" className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500" />
                 </div>
@@ -116,25 +123,25 @@ const Leaderboard = () => {
                 <div className="col-span-3 flex items-center gap-3">
                   <img src={item.avatar} alt={item.name} className="w-10 h-10 rounded-full object-cover" />
                   <div>
-                    <div className="text-sm font-medium text-gray-900">{item.name}</div>
-                    <div className="text-xs text-gray-500">{item.username}</div>
+                    <div className="text-sm font-medium" style={{ color: theme.sidebar_active_text }}>{item.name}</div>
+                    <div className="text-xs" style={{ color: theme.sidebar_text }}>{item.username}</div>
                   </div>
                 </div>
 
                 <div className="col-span-2">
-                  <div className="text-sm text-gray-600 truncate">{item.email}</div>
+                  <div className="text-sm" style={{ color: theme.sidebar_text }}>{item.email}</div>
                 </div>
 
                 <div className="col-span-2">
-                  <div className="text-sm text-gray-600">{item.startTime}</div>
+                  <div className="text-sm" style={{ color: theme.sidebar_text }}>{item.startTime}</div>
                 </div>
 
                 <div className="col-span-2">
-                  <div className="text-sm text-gray-600">{item.remaining}</div>
+                  <div className="text-sm" style={{ color: theme.sidebar_text }}>{item.remaining}</div>
                 </div>
 
                 <div className="col-span-1">
-                  <div className="text-sm text-gray-600">{item.rfid}</div>
+                  <div className="text-sm" style={{ color: theme.sidebar_text }}>{item.rfid}</div>
                 </div>
 
                 <div className="col-span-1 flex items-center justify-end gap-2">
@@ -153,21 +160,21 @@ const Leaderboard = () => {
           )}
         </div>
 
-        <div className="px-6 py-4 flex items-center justify-between border-t border-gray-200">
-          <button className="flex items-center gap-1 px-3 py-2 text-sm text-gray-600 hover:text-gray-900 hover:bg-gray-50 rounded border border-gray-300">
+        <div className="px-6 py-4 flex items-center justify-between border-t" style={{ borderColor: theme.sidebar_active_bg }}>
+          <button className="flex items-center gap-1 px-3 py-2 text-sm rounded border" style={{ borderColor: theme.sidebar_active_bg, color: theme.sidebar_text }}>
             <ChevronLeft size={16} />
             Previous
           </button>
 
           <div className="flex items-center gap-1">
-            <button className="w-8 h-8 flex items-center justify-center text-sm font-medium text-white bg-blue-600 rounded">1</button>
-            <button className="w-8 h-8 flex items-center justify-center text-sm font-medium text-gray-600 hover:text-gray-900 hover:bg-gray-50 rounded">2</button>
-            <button className="w-8 h-8 flex items-center justify-center text-sm font-medium text-gray-600 hover:text-gray-900 hover:bg-gray-50 rounded">3</button>
-            <span className="px-2 text-gray-400">...</span>
-            <button className="w-8 h-8 flex items-center justify-center text-sm font-medium text-gray-600 hover:text-gray-900 hover:bg-gray-50 rounded">10</button>
+            <button className="w-8 h-8 flex items-center justify-center text-sm font-medium text-white rounded" style={{ backgroundColor: primaryColor }}>1</button>
+            <button className="w-8 h-8 flex items-center justify-center text-sm font-medium rounded" style={{ color: theme.sidebar_text }}>2</button>
+            <button className="w-8 h-8 flex items-center justify-center text-sm font-medium rounded" style={{ color: theme.sidebar_text }}>3</button>
+            <span className="px-2" style={{ color: theme.sidebar_text }}>...</span>
+            <button className="w-8 h-8 flex items-center justify-center text-sm font-medium rounded" style={{ color: theme.sidebar_text }}>10</button>
           </div>
 
-          <button className="flex items-center gap-1 px-3 py-2 text-sm text-gray-600 hover:text-gray-900 hover:bg-gray-50 rounded border border-gray-300">
+          <button className="flex items-center gap-1 px-3 py-2 text-sm rounded border" style={{ borderColor: theme.sidebar_active_bg, color: theme.sidebar_text }}>
             Next
             <ChevronRight size={16} />
           </button>

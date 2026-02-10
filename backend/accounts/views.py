@@ -212,6 +212,13 @@ def _serialize_storyline(s, request=None):
     }
 
 
+@api_view(['GET'])
+@permission_classes([AllowAny])
+def public_storyline_list(request):
+    storylines = Storyline.objects.all()
+    return Response([_serialize_storyline(s, request) for s in storylines])
+
+
 @api_view(['GET', 'POST'])
 @permission_classes([IsAuthenticated])
 @parser_classes([MultiPartParser, FormParser])

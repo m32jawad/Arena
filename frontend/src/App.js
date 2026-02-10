@@ -1,8 +1,10 @@
 import React from 'react';
+import { BrowserRouter, Routes, Route } from 'react-router-dom';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { ThemeProvider } from './context/ThemeContext';
 import Layout from './dashboard/layout/Layout';
 import Login from './dashboard/components/Login';
+import SignUp from './signup/SignUp';
 
 function AppContent() {
   const { user, loading } = useAuth();
@@ -21,10 +23,15 @@ function AppContent() {
 
 export default function App() {
   return (
-    <AuthProvider>
-      <ThemeProvider>
-        <AppContent />
-      </ThemeProvider>
-    </AuthProvider>
+    <BrowserRouter>
+      <AuthProvider>
+        <ThemeProvider>
+          <Routes>
+            <Route path="/signup" element={<SignUp />} />
+            <Route path="*" element={<AppContent />} />
+          </Routes>
+        </ThemeProvider>
+      </AuthProvider>
+    </BrowserRouter>
   );
 }

@@ -80,3 +80,22 @@ class Storyline(models.Model):
 
     def __str__(self):
         return self.title
+
+
+class Controller(models.Model):
+    name = models.CharField(max_length=255)
+    ip_address = models.GenericIPAddressField()
+    cpu_usage = models.CharField(max_length=50, blank=True, default='')
+    storage_usage = models.CharField(max_length=100, blank=True, default='')
+    cpu_temperature = models.CharField(max_length=50, blank=True, default='')
+    ram_usage = models.CharField(max_length=50, blank=True, default='')
+    system_uptime = models.CharField(max_length=100, blank=True, default='')
+    voltage_power_status = models.CharField(max_length=100, blank=True, default='')
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['id']
+
+    def __str__(self):
+        return f'{self.name} ({self.ip_address})'

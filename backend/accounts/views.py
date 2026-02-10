@@ -6,7 +6,7 @@ from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework import status
 
-from .models import Storyline, GeneralSetting, DashboardTheme
+from .models import Storyline, GeneralSetting, DashboardTheme, Controller
 
 
 @api_view(['POST'])
@@ -321,3 +321,88 @@ def dashboard_theme_view(request):
 
     theme.save()
     return Response(_serialize_theme(theme, request))
+
+
+# ── Controller CRUD ──
+
+def _serialize_controller(c):
+    return {
+        'id': c.id,
+        'name': c.name,
+        'ip_address': c.ip_address,
+        'cpu_usage': c.cpu_usage,
+        'storage_usage': c.storage_usage,
+        'cpu_temperature': c.cpu_temperature,
+        'ram_usage': c.ram_usage,
+        'system_uptime': c.system_uptime,
+        'voltage_power_status': c.voltage_power_status,
+    }
+
+
+@api_view(['GET', 'POST'])
+@permission_classes([IsAuthenticated])
+def controller_list_create(request):
+    if request.method == 'GET':
+        controllers = Controller.objects.all()
+        return Response([_serialize_controller(c) for c in controllers])
+
+    # POST — only superusers may create
+    if not request.user.is_superuser:
+        return Response({'error': 'Permission denied.'}, status=status.HTTP_403_FORBIDDEN)
+
+    data = request.data
+    name = data.get('name', '').strip()
+    ip_address = data.get('ip_address', '').strip()
+
+    if not name or not ip_address:
+        return Response({'error': 'Name and IP address are required.'}, status=status.HTTP_400_BAD_REQUEST)
+
+    controller = Controller.objects.create(
+        name=name,
+        ip_address=ip_address,
+        cpu_usage=data.get('cpu_usage', ''),
+        storage_usage=data.get('storage_usage', ''),
+        cpu_temperature=data.get('cpu_temperature', ''),
+        ram_usage=data.get('ram_usage', ''),
+        system_uptime=data.get('system_uptime', ''),
+        voltage_power_status=data.get('voltage_power_status', ''),
+    )
+    return Response(_serialize_controller(controller), status=status.HTTP_201_CREATED)
+
+
+@api_view(['GET', 'PUT', 'DELETE'])
+@permission_classes([IsAuthenticated])
+def controller_detail(request, pk):
+    try:
+        controller = Controller.objects.get(pk=pk)
+    except Controller.DoesNotExist:
+        return Response({'error': 'Controller not found.'}, status=status.HTTP_404_NOT_FOUND)
+
+    if request.method == 'GET':
+        return Response(_serialize_controller(controller))
+
+    # PUT / DELETE — only superusers
+    if not request.user.is_superuser:
+        return Response({'error': 'Permission denied.'}, status=status.HTTP_403_FORBIDDEN)
+
+    if request.method == 'PUT':
+        data = request.data
+        controller.name = data.get('name', controller.name)
+        controller.ip_address = data.get('ip_address', controller.ip_address)
+        controller.cpu_usage = data.get('cpu_usage', controller.cpu_usage)
+        controller.storage_usage = data.get('storage_usage', controller.storage_usage)
+        controller.cpu_temperature = data.get('cpu_temperature', controller.cpu_temperature)
+        controller.ram_usage = data.get('ram_usage', controller.ram_usage)
+        controller.system_uptime = data.get('system_uptime', controller.system_uptime)
+        controller.voltage_power_status = data.get('voltage_power_status', controller.voltage_power_status)
+        controller.save()
+        return Response(_serialize_controller(controller))
+
+    if request.method == 'DELETE':
+        controller.delete()
+        return Response({'message': 'Controller deleted.'}, status=status.HTTP_204_NO_CONTENT)
+
+
+def controller_test_page(request):
+    from django.shortcuts import render
+    return render(request, 'controller_test.html')

@@ -199,7 +199,7 @@ export default function SignUp() {
       return (
         <div className="min-h-screen flex items-center justify-center px-5 py-8" style={bgStyle}>
           <div className="w-full max-w-[400px] flex flex-col items-center text-center">
-            <img src="/logo.png" alt="Unreal Place" className="w-40 mb-6" />
+            <img src="/logo.png" alt="Unreal Place" className="w-40 mb-6 cursor-pointer" onClick={() => { setSignupDone(false); setStep(1); }} />
             <div className="w-20 h-20 rounded-full bg-green-500/20 flex items-center justify-center mb-4">
               <svg className="w-10 h-10 text-green-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                 <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
@@ -215,7 +215,7 @@ export default function SignUp() {
     return (
       <div className="min-h-screen flex items-center justify-center px-5 py-8" style={bgStyle}>
         <div className="w-full max-w-[440px] flex flex-col items-center">
-          <img src="/logo.png" alt="Unreal Place" className="w-40 mb-2" />
+          <img src="/logo.png" alt="Unreal Place" className="w-40 mb-2 cursor-pointer" onClick={() => { closeCamera(); setStep(1); }} />
 
           {/* Back button */}
           <button
@@ -371,7 +371,7 @@ export default function SignUp() {
         style={bgStyle}
       >
         <div className="w-full max-w-[400px] flex flex-col items-center">
-          <img src="/logo.png" alt="Unreal Place" className="w-40 mb-2" />
+        <img src="/logo.png" alt="Unreal Place" className="w-40 mb-2 cursor-pointer" onClick={() => setStep(1)} />
 
           {/* Back button */}
           <button
@@ -491,7 +491,7 @@ export default function SignUp() {
       style={bgStyle}
     >
       <div className="w-full max-w-[400px] flex flex-col items-center">
-        <img src="/logo.png" alt="Unreal Place" className="w-40 mb-2" />
+        <img src="/logo.png" alt="Unreal Place" className="w-40 mb-2 cursor-pointer" onClick={() => setStep(1)} />
 
         <h1 className="text-white text-3xl font-bold my-3 mb-8 text-center">
           Sign Up

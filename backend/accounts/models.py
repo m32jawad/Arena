@@ -96,12 +96,19 @@ class PendingSignup(models.Model):
     avatar_id = models.CharField(max_length=50, blank=True, default='')
     rfid_tag = models.CharField(max_length=100, blank=True, default='')
     session_minutes = models.PositiveIntegerField(default=10)
+    points = models.PositiveIntegerField(default=0)
     status = models.CharField(
         max_length=20,
-        choices=[('pending', 'Pending'), ('approved', 'Approved'), ('rejected', 'Rejected')],
+        choices=[
+            ('pending', 'Pending'),
+            ('approved', 'Approved'),
+            ('ended', 'Ended'),
+            ('rejected', 'Rejected'),
+        ],
         default='pending',
     )
     created_at = models.DateTimeField(auto_now_add=True)
+    approved_at = models.DateTimeField(null=True, blank=True)
 
     class Meta:
         ordering = ['-created_at']
@@ -127,3 +134,21 @@ class Controller(models.Model):
 
     def __str__(self):
         return f'{self.name} ({self.ip_address})'
+
+
+class Checkpoint(models.Model):
+    """Records when a player clears a checkpoint (controller station)."""
+    session = models.ForeignKey(
+        'PendingSignup', on_delete=models.CASCADE, related_name='checkpoints'
+    )
+    controller = models.ForeignKey(
+        Controller, on_delete=models.CASCADE, related_name='checkpoints'
+    )
+    cleared_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['cleared_at']
+        unique_together = [('session', 'controller')]
+
+    def __str__(self):
+        return f'{self.session.party_name} @ {self.controller.name}'

@@ -1,0 +1,462 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>RFID API Test Panel</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: 'Segoe UI', system-ui, sans-serif; background: #0f172a; color: #e2e8f0; padding: 24px; min-height: 100vh; }
+    h1 { font-size: 22px; margin-bottom: 20px; color: #38bdf8; }
+    h2 { font-size: 16px; margin-bottom: 12px; color: #94a3b8; }
+    .card { background: #1e293b; border: 1px solid #334155; border-radius: 10px; padding: 20px; margin-bottom: 16px; }
+    label { display: block; font-size: 12px; color: #94a3b8; margin-bottom: 4px; font-weight: 500; }
+    input, select { width: 100%; padding: 8px 10px; background: #0f172a; border: 1px solid #334155; border-radius: 6px; color: #e2e8f0; font-size: 13px; }
+    input:focus, select:focus { outline: none; border-color: #38bdf8; }
+    .btn { padding: 10px 20px; border: none; border-radius: 6px; font-size: 13px; font-weight: 600; cursor: pointer; transition: .15s; }
+    .btn-primary { background: #3b82f6; color: white; }
+    .btn-primary:hover { background: #2563eb; }
+    .btn-success { background: #22c55e; color: white; }
+    .btn-success:hover { background: #16a34a; }
+    .btn-danger { background: #ef4444; color: white; }
+    .btn-danger:hover { background: #dc2626; }
+    .btn-warning { background: #f59e0b; color: #1e293b; }
+    .btn-warning:hover { background: #d97706; }
+    .btn-info { background: #06b6d4; color: white; }
+    .btn-info:hover { background: #0891b2; }
+    .btn-sm { padding: 6px 12px; font-size: 12px; }
+    .actions { display: flex; gap: 8px; margin-top: 16px; align-items: center; flex-wrap: wrap; }
+    .status-badge { font-size: 12px; padding: 4px 10px; border-radius: 4px; display: inline-block; }
+    .status-ok { background: #064e3b; color: #34d399; }
+    .status-err { background: #450a0a; color: #fca5a5; }
+    .status-info { background: #172554; color: #93c5fd; }
+    .status-warn { background: #451a03; color: #fbbf24; }
+    .row { display: flex; gap: 12px; align-items: end; margin-bottom: 12px; }
+    .row > div { flex: 1; }
+    .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+    .grid-3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px; }
+
+    /* Response panel */
+    .response-panel { background: #0f172a; border: 1px solid #334155; border-radius: 8px; padding: 14px; margin-top: 14px; }
+    .response-panel pre { font-family: 'Consolas', 'Fira Code', monospace; font-size: 12px; line-height: 1.6; white-space: pre-wrap; word-break: break-word; color: #a5f3fc; }
+    .response-panel .resp-header { font-size: 11px; color: #64748b; text-transform: uppercase; margin-bottom: 6px; display: flex; justify-content: space-between; align-items: center; }
+    .response-panel .resp-status { font-weight: 600; }
+    .resp-200 { color: #34d399; }
+    .resp-201 { color: #34d399; }
+    .resp-400 { color: #fbbf24; }
+    .resp-404 { color: #fca5a5; }
+    .resp-500 { color: #f87171; }
+
+    /* Activity log */
+    #log { background: #0f172a; border: 1px solid #334155; border-radius: 8px; padding: 12px; margin-top: 12px; max-height: 220px; overflow-y: auto; font-family: 'Consolas', monospace; font-size: 12px; line-height: 1.6; }
+    .log-entry { padding: 2px 0; border-bottom: 1px solid #1e293b; }
+    .log-time { color: #64748b; }
+    .log-ok { color: #34d399; }
+    .log-err { color: #fca5a5; }
+    .log-info { color: #93c5fd; }
+
+    /* Session status display */
+    .session-info { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 10px; margin-top: 12px; }
+    .info-box { background: #0f172a; border: 1px solid #334155; border-radius: 6px; padding: 10px 12px; }
+    .info-label { font-size: 10px; color: #64748b; text-transform: uppercase; letter-spacing: 0.5px; }
+    .info-value { font-size: 15px; font-weight: 600; color: #f1f5f9; margin-top: 3px; }
+    .info-value.active { color: #34d399; }
+    .info-value.expired { color: #fca5a5; }
+    .info-value.pending { color: #fbbf24; }
+
+    /* Checkpoint badges */
+    .cp-list { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+    .cp-badge { font-size: 11px; padding: 4px 10px; border-radius: 20px; background: #064e3b; color: #34d399; border: 1px solid #065f46; }
+
+    /* Timer */
+    .timer { font-size: 36px; font-weight: 700; font-family: 'Consolas', monospace; text-align: center; padding: 12px; }
+    .timer.active { color: #34d399; }
+    .timer.expired { color: #ef4444; }
+    .timer.idle { color: #64748b; }
+  </style>
+</head>
+<body>
+
+  <h1>&#128225; RFID API Test Panel</h1>
+
+  <!-- Login -->
+  <div class="card" id="login-card">
+    <h2>Login (admin credentials)</h2>
+    <div class="row">
+      <div><label>Username</label><input id="username" value="admin"></div>
+      <div><label>Password</label><input id="password" type="password" value="admin"></div>
+      <button class="btn btn-primary" onclick="doLogin()">Login</button>
+      <span id="login-status"></span>
+    </div>
+  </div>
+
+  <!-- RFID Input -->
+  <div class="card">
+    <h2>RFID Tag</h2>
+    <div class="row">
+      <div><label>RFID Tag Value</label><input id="rfid-input" placeholder="e.g. ABC123"></div>
+    </div>
+
+    <div class="actions">
+      <button class="btn btn-success" onclick="startSession()">&#9654; Start Session</button>
+      <button class="btn btn-danger" onclick="stopSession()">&#9632; Stop Session</button>
+      <button class="btn btn-info" onclick="getStatus()">&#128269; Get Status</button>
+    </div>
+
+    <!-- Live timer -->
+    <div id="timer-section" style="display:none; margin-top: 16px;">
+      <div class="timer idle" id="timer-display">--:--</div>
+      <div style="text-align:center; font-size: 12px; color: #64748b;" id="timer-label"></div>
+    </div>
+
+    <!-- Response -->
+    <div class="response-panel" id="rfid-response" style="display:none;">
+      <div class="resp-header">
+        <span>Response</span>
+        <span class="resp-status" id="rfid-resp-status"></span>
+      </div>
+      <pre id="rfid-resp-body"></pre>
+    </div>
+  </div>
+
+  <!-- Session Status Details -->
+  <div class="card" id="status-card" style="display:none;">
+    <h2>Session Details</h2>
+    <div class="session-info" id="session-info"></div>
+    <div id="checkpoint-section" style="margin-top: 14px;">
+      <label>Checkpoints Cleared</label>
+      <div class="cp-list" id="checkpoint-list"><span style="color:#64748b; font-size:12px;">None yet</span></div>
+    </div>
+  </div>
+
+  <!-- Checkpoint -->
+  <div class="card">
+    <h2>Clear Checkpoint</h2>
+    <div class="grid-2">
+      <div>
+        <label>RFID Tag (auto-filled from above)</label>
+        <input id="cp-rfid" placeholder="e.g. ABC123">
+      </div>
+      <div>
+        <label>Controller</label>
+        <select id="cp-controller">
+          <option value="">-- Select Controller --</option>
+        </select>
+      </div>
+    </div>
+    <div class="actions">
+      <button class="btn btn-warning" onclick="clearCheckpoint()">&#9873; Clear Checkpoint</button>
+      <button class="btn btn-sm btn-primary" onclick="loadControllers()">Refresh Controllers</button>
+    </div>
+
+    <!-- Response -->
+    <div class="response-panel" id="cp-response" style="display:none;">
+      <div class="resp-header">
+        <span>Response</span>
+        <span class="resp-status" id="cp-resp-status"></span>
+      </div>
+      <pre id="cp-resp-body"></pre>
+    </div>
+  </div>
+
+  <!-- Activity Log -->
+  <div class="card">
+    <h2>Activity Log</h2>
+    <div id="log"><div style="color:#64748b;">No activity yet.</div></div>
+  </div>
+
+<script>
+const API = 'http://localhost:8000/api/auth';
+let csrfToken = '';
+let controllers = [];
+let timerInterval = null;
+let timerEndTime = null;
+
+// ── Helpers ──
+
+function getCookie(name) {
+  const v = `; ${document.cookie}`;
+  const p = v.split(`; ${name}=`);
+  return p.length === 2 ? p.pop().split(';').shift() : '';
+}
+
+function log(msg, type = 'ok') {
+  const el = document.getElementById('log');
+  const t = new Date().toLocaleTimeString();
+  el.innerHTML = `<div class="log-entry"><span class="log-time">[${t}]</span> <span class="log-${type}">${msg}</span></div>` + el.innerHTML;
+}
+
+function showResp(prefix, status, body) {
+  document.getElementById(`${prefix}-response`).style.display = 'block';
+  const statusEl = document.getElementById(`${prefix}-resp-status`);
+  statusEl.textContent = status;
+  statusEl.className = `resp-status resp-${status}`;
+  document.getElementById(`${prefix}-resp-body`).textContent = JSON.stringify(body, null, 2);
+}
+
+function getRfid() {
+  return document.getElementById('rfid-input').value.trim();
+}
+
+// Keep checkpoint RFID in sync
+document.addEventListener('DOMContentLoaded', () => {
+  document.getElementById('rfid-input').addEventListener('input', (e) => {
+    document.getElementById('cp-rfid').value = e.target.value;
+  });
+});
+
+// ── Timer ──
+
+function startTimer(remainingSecs) {
+  stopTimer();
+  timerEndTime = Date.now() + remainingSecs * 1000;
+  const section = document.getElementById('timer-section');
+  section.style.display = 'block';
+  updateTimerDisplay();
+  timerInterval = setInterval(updateTimerDisplay, 1000);
+}
+
+function stopTimer() {
+  if (timerInterval) {
+    clearInterval(timerInterval);
+    timerInterval = null;
+  }
+}
+
+function updateTimerDisplay() {
+  const display = document.getElementById('timer-display');
+  const label = document.getElementById('timer-label');
+  const remaining = Math.max(0, Math.floor((timerEndTime - Date.now()) / 1000));
+  const mins = Math.floor(remaining / 60);
+  const secs = remaining % 60;
+  display.textContent = `${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
+
+  if (remaining <= 0) {
+    display.className = 'timer expired';
+    label.textContent = 'Session expired';
+    stopTimer();
+  } else {
+    display.className = 'timer active';
+    label.textContent = 'Time remaining';
+  }
+}
+
+function showTimerIdle(text) {
+  const section = document.getElementById('timer-section');
+  section.style.display = 'block';
+  const display = document.getElementById('timer-display');
+  display.className = 'timer idle';
+  display.textContent = '--:--';
+  document.getElementById('timer-label').textContent = text || '';
+  stopTimer();
+}
+
+// ── API Helpers ──
+
+async function apiPost(url, body) {
+  csrfToken = getCookie('csrftoken');
+  const res = await fetch(url, {
+    method: 'POST',
+    credentials: 'include',
+    headers: {
+      'Content-Type': 'application/json',
+      'X-CSRFToken': csrfToken,
+    },
+    body: JSON.stringify(body),
+  });
+  const data = await res.json();
+  return { status: res.status, data };
+}
+
+async function apiGet(url) {
+  csrfToken = getCookie('csrftoken');
+  const res = await fetch(url, {
+    credentials: 'include',
+    headers: { 'X-CSRFToken': csrfToken },
+  });
+  const data = await res.json();
+  return { status: res.status, data };
+}
+
+// ── Login ──
+
+async function doLogin() {
+  const user = document.getElementById('username').value;
+  const pass = document.getElementById('password').value;
+  try {
+    await fetch(`${API}/me/`, { credentials: 'include' });
+    csrfToken = getCookie('csrftoken');
+    const res = await fetch(`${API}/login/`, {
+      method: 'POST', credentials: 'include',
+      headers: { 'Content-Type': 'application/json', 'X-CSRFToken': csrfToken },
+      body: JSON.stringify({ username: user, password: pass })
+    });
+    if (!res.ok) throw new Error('Invalid credentials');
+    csrfToken = getCookie('csrftoken');
+    document.getElementById('login-status').innerHTML = '<span class="status-badge status-ok">Logged in!</span>';
+    log('Logged in as ' + user);
+    loadControllers();
+  } catch (e) {
+    document.getElementById('login-status').innerHTML = `<span class="status-badge status-err">${e.message}</span>`;
+    log('Login failed: ' + e.message, 'err');
+  }
+}
+
+// ── Load Controllers ──
+
+async function loadControllers() {
+  try {
+    const { status, data } = await apiGet(`${API}/controllers/`);
+    if (status !== 200) throw new Error('Failed to load controllers');
+    controllers = data;
+    const sel = document.getElementById('cp-controller');
+    sel.innerHTML = '<option value="">-- Select Controller --</option>';
+    controllers.forEach(c => {
+      sel.innerHTML += `<option value="${c.ip_address}">${c.name} (${c.ip_address})</option>`;
+    });
+    log(`Loaded ${controllers.length} controller(s)`, 'info');
+  } catch (e) {
+    log('Failed to load controllers: ' + e.message, 'err');
+  }
+}
+
+// ── Start Session ──
+
+async function startSession() {
+  const rfid = getRfid();
+  if (!rfid) { log('Please enter an RFID tag', 'err'); return; }
+  try {
+    const { status: st, data } = await apiPost(`${API}/rfid/start/`, { rfid });
+    showResp('rfid', st, data);
+    if (st === 200) {
+      log(`Session started for "${data.party_name}" (${data.session_minutes} min)`, 'ok');
+      startTimer(data.session_minutes * 60);
+    } else {
+      log(`Start failed: ${data.error}`, 'err');
+      showTimerIdle('Not started');
+    }
+  } catch (e) {
+    log('Start request failed: ' + e.message, 'err');
+  }
+}
+
+// ── Stop Session ──
+
+async function stopSession() {
+  const rfid = getRfid();
+  if (!rfid) { log('Please enter an RFID tag', 'err'); return; }
+  try {
+    const { status: st, data } = await apiPost(`${API}/rfid/stop/`, { rfid });
+    showResp('rfid', st, data);
+    if (st === 200) {
+      log(`Session stopped for "${data.party_name}"`, 'ok');
+      stopTimer();
+      showTimerIdle('Session ended');
+    } else {
+      log(`Stop failed: ${data.error}`, 'err');
+    }
+  } catch (e) {
+    log('Stop request failed: ' + e.message, 'err');
+  }
+}
+
+// ── Get Status ──
+
+async function getStatus() {
+  const rfid = getRfid();
+  if (!rfid) { log('Please enter an RFID tag', 'err'); return; }
+  try {
+    const { status: st, data } = await apiPost(`${API}/rfid/status/`, { rfid });
+    showResp('rfid', st, data);
+
+    if (st === 200) {
+      log(`Status for "${data.party_name}": ${data.session_status}`, 'info');
+      showSessionDetails(data);
+
+      if (data.session_status === 'active' && data.remaining_seconds > 0) {
+        startTimer(data.remaining_seconds);
+      } else if (data.session_status === 'expired') {
+        showTimerIdle('Session expired');
+      } else {
+        showTimerIdle(data.session_status);
+      }
+    } else {
+      log(`Status failed: ${data.error}`, 'err');
+      document.getElementById('status-card').style.display = 'none';
+    }
+  } catch (e) {
+    log('Status request failed: ' + e.message, 'err');
+  }
+}
+
+function showSessionDetails(data) {
+  const card = document.getElementById('status-card');
+  card.style.display = 'block';
+
+  const statusClass = data.session_status === 'active' ? 'active'
+    : data.session_status === 'expired' ? 'expired' : 'pending';
+
+  const fields = [
+    { label: 'Party Name', value: data.party_name || '—' },
+    { label: 'Status', value: data.session_status || '—', cls: statusClass },
+    { label: 'RFID', value: data.rfid_tag || '—' },
+    { label: 'Session Length', value: `${data.session_minutes || 0} min` },
+    { label: 'Points', value: data.total_points ?? data.points ?? 0 },
+    { label: 'Remaining', value: data.remaining_minutes != null ? `${data.remaining_minutes} min` : '—' },
+    { label: 'Team Size', value: data.team_size || '—' },
+    { label: 'Approved At', value: data.approved_at ? new Date(data.approved_at).toLocaleString() : '—' },
+  ];
+
+  document.getElementById('session-info').innerHTML = fields.map(f =>
+    `<div class="info-box">
+      <div class="info-label">${f.label}</div>
+      <div class="info-value ${f.cls || ''}">${f.value}</div>
+    </div>`
+  ).join('');
+
+  // Checkpoints
+  const cpList = document.getElementById('checkpoint-list');
+  if (data.checkpoints && data.checkpoints.length > 0) {
+    cpList.innerHTML = data.checkpoints.map(cp =>
+      `<span class="cp-badge">${cp.controller_name} &bull; ${new Date(cp.cleared_at).toLocaleTimeString()}</span>`
+    ).join('');
+  } else {
+    cpList.innerHTML = '<span style="color:#64748b; font-size:12px;">None yet</span>';
+  }
+}
+
+// ── Clear Checkpoint ──
+
+async function clearCheckpoint() {
+  const rfid = document.getElementById('cp-rfid').value.trim() || getRfid();
+  const controllerIp = document.getElementById('cp-controller').value;
+  if (!rfid) { log('Please enter an RFID tag', 'err'); return; }
+  if (!controllerIp) { log('Please select a controller', 'err'); return; }
+
+  try {
+    const { status: st, data } = await apiPost(`${API}/rfid/checkpoint/`, {
+      rfid,
+      controller_ip: controllerIp,
+    });
+    showResp('cp', st, data);
+    if (st === 201) {
+      log(`Checkpoint cleared! ${data.controller} — Points: ${data.total_points}`, 'ok');
+    } else if (st === 200) {
+      log(`Checkpoint already cleared: ${data.controller}`, 'info');
+    } else {
+      log(`Checkpoint failed: ${data.error}`, 'err');
+    }
+    // Refresh status if we have an RFID
+    if (rfid) {
+      setTimeout(() => {
+        document.getElementById('rfid-input').value = rfid;
+        getStatus();
+      }, 300);
+    }
+  } catch (e) {
+    log('Checkpoint request failed: ' + e.message, 'err');
+  }
+}
+</script>
+</body>
+</html>

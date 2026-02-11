@@ -22,4 +22,17 @@ urlpatterns = [
     path('pending/', views.pending_list, name='pending-list'),
     path('pending/<int:pk>/approve/', views.pending_approve, name='pending-approve'),
     path('pending/<int:pk>/reject/', views.pending_reject, name='pending-reject'),
+
+    # Sessions
+    path('sessions/live/', views.live_sessions, name='live-sessions'),
+    path('sessions/ended/', views.ended_sessions, name='ended-sessions'),
+    path('sessions/<int:pk>/end/', views.end_session, name='end-session'),
+    path('sessions/<int:pk>/update/', views.update_session, name='update-session'),
+
+    # RFID endpoints (hardware / controller facing)
+    path('rfid/start/', views.rfid_start_session, name='rfid-start-session'),
+    path('rfid/stop/', views.rfid_stop_session, name='rfid-stop-session'),
+    path('rfid/checkpoint/', views.rfid_checkpoint, name='rfid-checkpoint'),
+    path('rfid/status/', views.rfid_status, name='rfid-status'),
+    path('rfid-test/', views.rfid_test_page, name='rfid-test'),
 ]

@@ -6,7 +6,7 @@ from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework import status
 
-from .models import Storyline, GeneralSetting, DashboardTheme, Controller, PendingSignup
+from .models import Storyline, GeneralSetting, DashboardTheme, Controller, PendingSignup, Checkpoint
 
 
 @api_view(['POST'])
@@ -433,8 +433,10 @@ def _serialize_pending(p, request=None):
         'avatar_id': p.avatar_id,
         'rfid_tag': p.rfid_tag,
         'session_minutes': p.session_minutes,
+        'points': p.points,
         'status': p.status,
         'created_at': p.created_at.isoformat() if p.created_at else '',
+        'approved_at': p.approved_at.isoformat() if p.approved_at else '',
     }
 
 
@@ -504,7 +506,130 @@ def pending_approve(request, pk):
         except (ValueError, TypeError):
             pass
 
+    from django.utils import timezone
     p.status = 'approved'
+    p.approved_at = timezone.now()
+    p.save()
+    return Response(_serialize_pending(p, request))
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def live_sessions(request):
+    """Return approved sessions that still have time remaining."""
+    from django.utils import timezone
+    from datetime import timedelta
+    now = timezone.now()
+    approved = PendingSignup.objects.filter(status='approved', approved_at__isnull=False)
+    live = []
+    for p in approved:
+        end_time = p.approved_at + timedelta(minutes=p.session_minutes)
+        if now < end_time:
+            remaining = end_time - now
+            remaining_mins = max(0, int(remaining.total_seconds() // 60))
+            data = _serialize_pending(p, request)
+            data['remaining_minutes'] = remaining_mins
+            live.append(data)
+        else:
+            # auto-end expired sessions
+            p.status = 'ended'
+            p.save(update_fields=['status'])
+    return Response(live)
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def ended_sessions(request):
+    """Return ended sessions."""
+    from django.utils import timezone
+    from datetime import timedelta
+    now = timezone.now()
+    # Also mark any expired approved sessions as ended
+    for p in PendingSignup.objects.filter(status='approved', approved_at__isnull=False):
+        end_time = p.approved_at + timedelta(minutes=p.session_minutes)
+        if now >= end_time:
+            p.status = 'ended'
+            p.save(update_fields=['status'])
+    ended = PendingSignup.objects.filter(status='ended').order_by('-approved_at')
+    result = []
+    for p in ended:
+        data = _serialize_pending(p, request)
+        if p.approved_at:
+            ended_at = p.approved_at + timedelta(minutes=p.session_minutes)
+            diff = now - ended_at
+            mins = max(0, int(diff.total_seconds() // 60))
+            if mins < 60:
+                data['ended_ago'] = f'{mins} min{"s" if mins != 1 else ""} ago'
+            elif mins < 1440:
+                hrs = mins // 60
+                data['ended_ago'] = f'{hrs} hr{"s" if hrs != 1 else ""} ago'
+            else:
+                days = mins // 1440
+                data['ended_ago'] = f'{days} day{"s" if days != 1 else ""} ago'
+        else:
+            data['ended_ago'] = ''
+        result.append(data)
+    return Response(result)
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def end_session(request, pk):
+    """Manually end a live session."""
+    if not request.user.is_superuser:
+        return Response({'error': 'Permission denied.'}, status=status.HTTP_403_FORBIDDEN)
+    try:
+        p = PendingSignup.objects.get(pk=pk)
+    except PendingSignup.DoesNotExist:
+        return Response({'error': 'Not found.'}, status=status.HTTP_404_NOT_FOUND)
+    p.status = 'ended'
+    p.save(update_fields=['status'])
+    return Response({'message': 'Session ended.'})
+
+
+@api_view(['PUT'])
+@permission_classes([IsAuthenticated])
+def update_session(request, pk):
+    """Update a live session (session_minutes, points, etc.)."""
+    if not request.user.is_superuser:
+        return Response({'error': 'Permission denied.'}, status=status.HTTP_403_FORBIDDEN)
+    try:
+        p = PendingSignup.objects.get(pk=pk, status='approved')
+    except PendingSignup.DoesNotExist:
+        return Response({'error': 'Not found.'}, status=status.HTTP_404_NOT_FOUND)
+
+    data = request.data
+    gs = GeneralSetting.load()
+    
+    # extra_minutes: add or subtract time from current session
+    if 'extra_minutes' in data:
+        try:
+            extra = int(data['extra_minutes'])
+            if extra > 0:
+                # Always allow adding time if allow_extension is True
+                if gs.allow_extension:
+                    p.session_minutes = p.session_minutes + extra
+            elif extra < 0:
+                # Only allow reducing time if allow_reduction is True
+                if gs.allow_reduction:
+                    from django.utils import timezone
+                    from datetime import timedelta
+                    # Calculate elapsed time to ensure we don't go below it
+                    if p.approved_at:
+                        elapsed = (timezone.now() - p.approved_at).total_seconds() / 60
+                        min_allowed = max(1, int(elapsed) + 1)  # At least 1 min more than elapsed
+                        new_total = p.session_minutes + extra
+                        p.session_minutes = max(min_allowed, new_total)
+                    else:
+                        # If not started yet, allow any reduction down to 1 minute
+                        p.session_minutes = max(1, p.session_minutes + extra)
+        except (ValueError, TypeError):
+            pass
+    if 'points' in data:
+        try:
+            p.points = int(data['points'])
+        except (ValueError, TypeError):
+            pass
     p.save()
     return Response(_serialize_pending(p, request))
 
@@ -522,3 +647,203 @@ def pending_reject(request, pk):
     p.status = 'rejected'
     p.save()
     return Response({'message': 'Rejected.'})
+
+
+# ── RFID Session Start / Stop ──
+
+@api_view(['POST'])
+@permission_classes([AllowAny])
+def rfid_start_session(request):
+    """Start the session timer for a player identified by RFID tag.
+
+    Body: { "rfid": "<tag>" }
+    Sets approved_at = now so the countdown begins.
+    """
+    rfid = request.data.get('rfid', '').strip()
+    if not rfid:
+        return Response({'error': 'RFID tag is required.'}, status=status.HTTP_400_BAD_REQUEST)
+
+    try:
+        p = PendingSignup.objects.get(rfid_tag=rfid, status='approved')
+    except PendingSignup.DoesNotExist:
+        return Response(
+            {'error': 'No approved session found for this RFID tag.'},
+            status=status.HTTP_404_NOT_FOUND,
+        )
+
+    from django.utils import timezone
+    p.approved_at = timezone.now()
+    p.save(update_fields=['approved_at'])
+    return Response({
+        'message': 'Session started.',
+        'session_id': p.id,
+        'party_name': p.party_name,
+        'session_minutes': p.session_minutes,
+        'started_at': p.approved_at.isoformat(),
+    })
+
+
+@api_view(['POST'])
+@permission_classes([AllowAny])
+def rfid_stop_session(request):
+    """Stop the session timer for a player identified by RFID tag.
+
+    Body: { "rfid": "<tag>" }
+    Sets status = 'ended'.
+    """
+    rfid = request.data.get('rfid', '').strip()
+    if not rfid:
+        return Response({'error': 'RFID tag is required.'}, status=status.HTTP_400_BAD_REQUEST)
+
+    try:
+        p = PendingSignup.objects.get(rfid_tag=rfid, status='approved')
+    except PendingSignup.DoesNotExist:
+        return Response(
+            {'error': 'No active session found for this RFID tag.'},
+            status=status.HTTP_404_NOT_FOUND,
+        )
+
+    p.status = 'ended'
+    p.save(update_fields=['status'])
+    return Response({
+        'message': 'Session stopped.',
+        'session_id': p.id,
+        'party_name': p.party_name,
+    })
+
+
+# ── RFID Checkpoint ──
+
+@api_view(['POST'])
+@permission_classes([AllowAny])
+def rfid_checkpoint(request):
+    """Record that a player cleared a checkpoint (controller station).
+
+    Body: { "rfid": "<tag>", "controller_ip": "<ip>" }
+    Creates a Checkpoint row linking the session to the controller.
+    If the checkpoint was already cleared, returns the existing record.
+    """
+    rfid = request.data.get('rfid', '').strip()
+    controller_ip = request.data.get('controller_ip', '').strip()
+
+    if not rfid or not controller_ip:
+        return Response(
+            {'error': 'Both rfid and controller_ip are required.'},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    # Look up the active session
+    try:
+        p = PendingSignup.objects.get(rfid_tag=rfid, status='approved')
+    except PendingSignup.DoesNotExist:
+        return Response(
+            {'error': 'No active session found for this RFID tag.'},
+            status=status.HTTP_404_NOT_FOUND,
+        )
+
+    # Look up the controller
+    try:
+        controller = Controller.objects.get(ip_address=controller_ip)
+    except Controller.DoesNotExist:
+        return Response(
+            {'error': 'Controller not found for the given IP.'},
+            status=status.HTTP_404_NOT_FOUND,
+        )
+
+    checkpoint, created = Checkpoint.objects.get_or_create(
+        session=p, controller=controller
+    )
+
+    # Increment points for the player
+    if created:
+        p.points += 1
+        p.save(update_fields=['points'])
+
+    return Response({
+        'message': 'Checkpoint cleared.' if created else 'Checkpoint already cleared.',
+        'checkpoint_id': checkpoint.id,
+        'session_id': p.id,
+        'party_name': p.party_name,
+        'controller': controller.name,
+        'cleared_at': checkpoint.cleared_at.isoformat(),
+        'total_points': p.points,
+    }, status=status.HTTP_201_CREATED if created else status.HTTP_200_OK)
+
+
+# ── RFID Session Status ──
+
+@api_view(['POST'])
+@permission_classes([AllowAny])
+def rfid_status(request):
+    """Get the session status for a player identified by RFID tag.
+
+    Body: { "rfid": "<tag>" }
+    Returns whether the session is active, expired, or not found.
+    """
+    rfid = request.data.get('rfid', '').strip()
+    if not rfid:
+        return Response({'error': 'RFID tag is required.'}, status=status.HTTP_400_BAD_REQUEST)
+
+    # Try to find any session with this RFID (most recent first)
+    try:
+        p = PendingSignup.objects.filter(rfid_tag=rfid).latest('created_at')
+    except PendingSignup.DoesNotExist:
+        return Response(
+            {'error': 'No session found for this RFID tag.', 'status': 'not_found'},
+            status=status.HTTP_404_NOT_FOUND,
+        )
+
+    from django.utils import timezone
+    from datetime import timedelta
+    now = timezone.now()
+
+    data = _serialize_pending(p, request)
+
+    if p.status == 'approved' and p.approved_at:
+        end_time = p.approved_at + timedelta(minutes=p.session_minutes)
+        if now < end_time:
+            remaining = end_time - now
+            remaining_secs = max(0, int(remaining.total_seconds()))
+            data['session_status'] = 'active'
+            data['remaining_seconds'] = remaining_secs
+            data['remaining_minutes'] = remaining_secs // 60
+            data['end_time'] = end_time.isoformat()
+        else:
+            # Timer exceeded — auto-end
+            p.status = 'ended'
+            p.save(update_fields=['status'])
+            data['session_status'] = 'expired'
+            data['status'] = 'ended'
+            data['remaining_seconds'] = 0
+            data['remaining_minutes'] = 0
+    elif p.status == 'approved' and not p.approved_at:
+        data['session_status'] = 'approved_not_started'
+    elif p.status == 'ended':
+        data['session_status'] = 'expired'
+        data['remaining_seconds'] = 0
+        data['remaining_minutes'] = 0
+    elif p.status == 'pending':
+        data['session_status'] = 'pending'
+    elif p.status == 'rejected':
+        data['session_status'] = 'rejected'
+    else:
+        data['session_status'] = p.status
+
+    # Include checkpoints cleared
+    checkpoints = Checkpoint.objects.filter(session=p).select_related('controller')
+    data['checkpoints'] = [
+        {
+            'controller_name': cp.controller.name,
+            'controller_ip': cp.controller.ip_address,
+            'cleared_at': cp.cleared_at.isoformat(),
+        }
+        for cp in checkpoints
+    ]
+
+    return Response(data)
+
+
+def rfid_test_page(request):
+    """Serve the RFID API test page."""
+    from django.shortcuts import render
+    return render(request, 'rfid_test.html')

@@ -16,4 +16,10 @@ urlpatterns = [
     path('controllers/', views.controller_list_create, name='controller-list-create'),
     path('controllers/<int:pk>/', views.controller_detail, name='controller-detail'),
     path('controller-test/', views.controller_test_page, name='controller-test'),
+
+    # Pending Signup
+    path('public/signup/', views.public_signup, name='public-signup'),
+    path('pending/', views.pending_list, name='pending-list'),
+    path('pending/<int:pk>/approve/', views.pending_approve, name='pending-approve'),
+    path('pending/<int:pk>/reject/', views.pending_reject, name='pending-reject'),
 ]

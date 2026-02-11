@@ -6,7 +6,7 @@ from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework import status
 
-from .models import Storyline, GeneralSetting, DashboardTheme, Controller
+from .models import Storyline, GeneralSetting, DashboardTheme, Controller, PendingSignup
 
 
 @api_view(['POST'])
@@ -413,3 +413,112 @@ def controller_detail(request, pk):
 def controller_test_page(request):
     from django.shortcuts import render
     return render(request, 'controller_test.html')
+
+
+# ── Pending Signup (public create + admin list/approve/reject) ──
+
+def _serialize_pending(p, request=None):
+    photo_url = ''
+    if p.profile_photo:
+        photo_url = request.build_absolute_uri(p.profile_photo.url) if request else p.profile_photo.url
+    return {
+        'id': p.id,
+        'party_name': p.party_name,
+        'email': p.email,
+        'team_size': p.team_size,
+        'receive_offers': p.receive_offers,
+        'storyline': p.storyline_id,
+        'storyline_title': p.storyline.title if p.storyline else '',
+        'profile_photo': photo_url,
+        'avatar_id': p.avatar_id,
+        'rfid_tag': p.rfid_tag,
+        'session_minutes': p.session_minutes,
+        'status': p.status,
+        'created_at': p.created_at.isoformat() if p.created_at else '',
+    }
+
+
+@api_view(['POST'])
+@permission_classes([AllowAny])
+@parser_classes([MultiPartParser, FormParser])
+def public_signup(request):
+    """Public endpoint — anyone can submit a signup request."""
+    data = request.data
+    party_name = data.get('party_name', '').strip()
+    email = data.get('email', '').strip()
+    team_size = data.get('team_size', 1)
+    receive_offers = data.get('receive_offers', 'false').lower() in ('true', '1', 'yes')
+    storyline_id = data.get('storyline_id')
+    avatar_id = data.get('avatar_id', '').strip()
+    profile_photo = request.FILES.get('profile_photo')
+
+    if not party_name:
+        return Response({'error': 'Party name is required.'}, status=status.HTTP_400_BAD_REQUEST)
+
+    storyline = None
+    if storyline_id:
+        try:
+            storyline = Storyline.objects.get(pk=storyline_id)
+        except Storyline.DoesNotExist:
+            pass
+
+    pending = PendingSignup.objects.create(
+        party_name=party_name,
+        email=email,
+        team_size=int(team_size),
+        receive_offers=receive_offers,
+        storyline=storyline,
+        profile_photo=profile_photo,
+        avatar_id=avatar_id,
+    )
+    return Response(_serialize_pending(pending, request), status=status.HTTP_201_CREATED)
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def pending_list(request):
+    """List all pending signups for dashboard."""
+    signups = PendingSignup.objects.filter(status='pending')
+    return Response([_serialize_pending(p, request) for p in signups])
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def pending_approve(request, pk):
+    """Approve a pending signup."""
+    if not request.user.is_superuser:
+        return Response({'error': 'Permission denied.'}, status=status.HTTP_403_FORBIDDEN)
+    try:
+        p = PendingSignup.objects.get(pk=pk)
+    except PendingSignup.DoesNotExist:
+        return Response({'error': 'Not found.'}, status=status.HTTP_404_NOT_FOUND)
+
+    # Save RFID tag and session time from the approval modal
+    rfid_tag = request.data.get('rfid_tag', '').strip()
+    session_minutes = request.data.get('session_minutes')
+    if rfid_tag:
+        p.rfid_tag = rfid_tag
+    if session_minutes is not None:
+        try:
+            p.session_minutes = int(session_minutes)
+        except (ValueError, TypeError):
+            pass
+
+    p.status = 'approved'
+    p.save()
+    return Response(_serialize_pending(p, request))
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def pending_reject(request, pk):
+    """Reject (delete) a pending signup."""
+    if not request.user.is_superuser:
+        return Response({'error': 'Permission denied.'}, status=status.HTTP_403_FORBIDDEN)
+    try:
+        p = PendingSignup.objects.get(pk=pk)
+    except PendingSignup.DoesNotExist:
+        return Response({'error': 'Not found.'}, status=status.HTTP_404_NOT_FOUND)
+    p.status = 'rejected'
+    p.save()
+    return Response({'message': 'Rejected.'})

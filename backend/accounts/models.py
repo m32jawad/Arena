@@ -82,6 +82,34 @@ class Storyline(models.Model):
         return self.title
 
 
+class PendingSignup(models.Model):
+    """Stores signup requests waiting for admin approval."""
+    party_name = models.CharField(max_length=255)
+    email = models.EmailField(blank=True, default='')
+    team_size = models.PositiveIntegerField(default=1)
+    receive_offers = models.BooleanField(default=False)
+    storyline = models.ForeignKey(
+        Storyline, on_delete=models.SET_NULL, null=True, blank=True
+    )
+    # profile pic: either an uploaded selfie or an avatar identifier
+    profile_photo = models.ImageField(upload_to='signups/', blank=True, null=True)
+    avatar_id = models.CharField(max_length=50, blank=True, default='')
+    rfid_tag = models.CharField(max_length=100, blank=True, default='')
+    session_minutes = models.PositiveIntegerField(default=10)
+    status = models.CharField(
+        max_length=20,
+        choices=[('pending', 'Pending'), ('approved', 'Approved'), ('rejected', 'Rejected')],
+        default='pending',
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['-created_at']
+
+    def __str__(self):
+        return f'{self.party_name} ({self.status})'
+
+
 class Controller(models.Model):
     name = models.CharField(max_length=255)
     ip_address = models.GenericIPAddressField()

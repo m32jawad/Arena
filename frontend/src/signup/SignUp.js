@@ -110,16 +110,27 @@ export default function SignUp() {
     );
   }
 
-  /* ─── Step 2: Select Storyline ─── */
-  if (step === 2) {
-    return (
-      <div className="min-h-screen flex items-center justify-center px-5 py-8" style={bgStyle}>
-        <div className="w-full max-w-[400px] flex flex-col items-center">
-          <img src="/logo.png" alt="Unreal Place" className="w-40 mb-2" />
+ /* ─── Step 2: Select Storyline ─── */
+if (step === 2) {
+  return (
+    <div className="min-h-screen flex items-center justify-center px-5 py-8" style={bgStyle}>
+      <div className="w-full max-w-[400px] flex flex-col items-center">
+        <img src="/logo.png" alt="Unreal Place" className="w-40 mb-2" />
 
-          <h1 className="text-white text-3xl font-bold my-3 mb-6 text-center">Select Storyline</h1>
+        <h1 className="text-white text-3xl font-bold my-3 mb-6 text-center">Select Storyline</h1>
 
-          <div className="w-full flex flex-col gap-4 mb-6">
+        {/* Container with fixed height that becomes scrollable when there are more than 2 storylines */}
+        <div 
+          className="w-full mb-6"
+          style={{ 
+            maxHeight: storylines.length > 2 ? '320px' : 'auto',
+            overflowY: storylines.length > 2 ? 'auto' : 'visible',
+            scrollbarWidth: 'thin',
+            scrollbarColor: '#9b30ff transparent',
+            paddingRight: storylines.length > 2 ? '8px' : '0'
+          }}
+        >
+          <div className="flex flex-col gap-4">
             {storylines.map(s => (
               <div
                 key={s.id}
@@ -143,32 +154,33 @@ export default function SignUp() {
               </div>
             ))}
           </div>
-
-          <button
-            className="w-full py-4 rounded-2xl text-white text-lg font-semibold cursor-pointer border-none transition hover:opacity-90"
-            style={btnStyle}
-            onClick={() => setStep(3)}
-          >
-            Step 2 of 3
-          </button>
         </div>
 
-        {/* Storyline Modal */}
-        {viewingStory && (
-          <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-5" onClick={() => setViewingStory(null)}>
-            <div className="rounded-xl w-full max-w-[480px] p-6 relative max-h-[80vh] overflow-y-auto" style={{ background: '#1e1035' }} onClick={e => e.stopPropagation()}>
-              <button className="absolute top-3 right-4 bg-transparent border-none text-white text-2xl cursor-pointer" onClick={() => setViewingStory(null)}>&times;</button>
-              <h2 className="text-white text-xl font-bold mb-3">{viewingStory.title}</h2>
-              {viewingStory.image && (
-                <img src={viewingStory.image} alt={viewingStory.title} className="w-full max-h-48 object-cover rounded-lg mb-4" />
-              )}
-              <p className="text-white/80 text-sm leading-relaxed whitespace-pre-wrap m-0">{viewingStory.text}</p>
-            </div>
-          </div>
-        )}
+        <button
+          className="w-full py-4 rounded-2xl text-white text-lg font-semibold cursor-pointer border-none transition hover:opacity-90"
+          style={btnStyle}
+          onClick={() => setStep(3)}
+        >
+          Step 2 of 3
+        </button>
       </div>
-    );
-  }
+
+      {/* Storyline Modal */}
+      {viewingStory && (
+        <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-5" onClick={() => setViewingStory(null)}>
+          <div className="rounded-xl w-full max-w-[480px] p-6 relative max-h-[80vh] overflow-y-auto" style={{ background: '#1e1035' }} onClick={e => e.stopPropagation()}>
+            <button className="absolute top-3 right-4 bg-transparent border-none text-white text-2xl cursor-pointer" onClick={() => setViewingStory(null)}>&times;</button>
+            <h2 className="text-white text-xl font-bold mb-3">{viewingStory.title}</h2>
+            {viewingStory.image && (
+              <img src={viewingStory.image} alt={viewingStory.title} className="w-full max-h-48 object-cover rounded-lg mb-4" />
+            )}
+            <p className="text-white/80 text-sm leading-relaxed whitespace-pre-wrap m-0">{viewingStory.text}</p>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
 
   /* ─── Step 1: Sign Up ─── */
   return (

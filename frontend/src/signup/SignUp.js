@@ -28,9 +28,24 @@ const AvatarSVG = ({ bg, skin, hair, size = 64 }) => (
   </svg>
 );
 
-const bgStyle = {
-  background: "linear-gradient(180deg,#1a0a2e 0%,#16082b 50%,#0d0618 100%)",
-};
+const VideoBg = () => (
+  <>
+    <video
+      autoPlay
+      loop
+      muted
+      playsInline
+      className="fixed inset-0 w-full h-full object-cover"
+      style={{ zIndex: -1 }}
+    >
+      <source src="/bgvideo.mp4" type="video/mp4" />
+    </video>
+    <div
+      className="fixed inset-0"
+      style={{ zIndex: -1, background: "rgba(10, 5, 20, 0.5)" }}
+    />
+  </>
+);
 const btnStyle = {
   background: "linear-gradient(135deg,#9b30ff 0%,#a83279 100%)",
 };
@@ -75,6 +90,7 @@ export default function SignUp() {
       setSelfiePreview(null);
       setSelectedAvatar(null);
       setGroupPhoto(null);
+      setSelectedGroup(null);
       setTimeout(() => {
         if (videoRef.current) {
           videoRef.current.srcObject = stream;
@@ -96,16 +112,18 @@ export default function SignUp() {
     const ctx = canvas.getContext("2d");
     ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
     canvas.toBlob((blob) => {
+      const photoUrl = URL.createObjectURL(blob);
       setSelfieBlob(blob);
-      setSelfiePreview(URL.createObjectURL(blob));
+      setSelfiePreview(photoUrl);
+      setGroupPhoto(photoUrl);
       // stop camera
       if (streamRef.current) {
         streamRef.current.getTracks().forEach((t) => t.stop());
       }
       setCameraOpen(false);
-      // clear avatar when selfie taken
+      // clear selections when photo taken
       setSelectedAvatar(null);
-      setGroupPhoto(null);
+      setSelectedGroup(null);
     }, "image/jpeg", 0.85);
   }, []);
 
@@ -156,6 +174,9 @@ export default function SignUp() {
       if (selectedAvatar) {
         fd.append("avatar_id", selectedAvatar.id);
       }
+      if (selectedGroup) {
+        fd.append("group_id", selectedGroup);
+      }
 
       const res = await fetch(`${API_BASE}/public/signup/`, {
         method: "POST",
@@ -172,7 +193,7 @@ export default function SignUp() {
     } finally {
       setSubmitting(false);
     }
-  }, [partyName, email, teamSize, receiveOffers, selectedStoryline, selfieBlob, selectedAvatar]);
+  }, [partyName, email, teamSize, receiveOffers, selectedStoryline, selfieBlob, selectedAvatar, selectedGroup]);
 
   /* Cleanup camera on unmount */
   useEffect(() => {
@@ -192,12 +213,13 @@ export default function SignUp() {
     }
   }, [step]);
 
-  /* ─── Step 3: Profile Photo / Avatar ─── */
+  /* ─── Step 3: Group Selection with Avatars ─── */
   if (step === 3) {
     /* Success screen after signup */
     if (signupDone) {
       return (
-        <div className="min-h-screen flex items-center justify-center px-5 py-8" style={bgStyle}>
+        <div className="min-h-screen flex items-center justify-center px-5 py-8">
+          <VideoBg />
           <div className="w-full max-w-[400px] flex flex-col items-center text-center">
             <img src="/logo.png" alt="Unreal Place" className="w-40 mb-6 cursor-pointer" onClick={() => { setSignupDone(false); setStep(1); }} />
             <div className="w-20 h-20 rounded-full bg-green-500/20 flex items-center justify-center mb-4">
@@ -212,26 +234,57 @@ export default function SignUp() {
       );
     }
 
+    /* Group avatars configuration */
+    const groups = [
+      {
+        id: 1,
+        name: "Group 1",
+        avatars: [
+          { bg: "#F39C12", skin: "#E67E22", hair: "#2C3E50", border: "#FF1493" },
+          { bg: "#3498DB", skin: "#E74C3C", hair: "#2ECC71", border: "#FF1493" },
+          { bg: "#F39C12", skin: "#E67E22", hair: "#2C3E50", border: "#FF1493" },
+        ],
+        borderColor: "#FF1493",
+      },
+      {
+        id: 2,
+        name: "Group 2",
+        avatars: [
+          { bg: "#F39C12", skin: "#E67E22", hair: "#2C3E50", border: "#00BFFF" },
+          { bg: "#3498DB", skin: "#E74C3C", hair: "#2ECC71", border: "#00BFFF" },
+          { bg: "#F39C12", skin: "#E67E22", hair: "#2C3E50", border: "#00BFFF" },
+        ],
+        borderColor: "#00BFFF",
+      },
+      {
+        id: 3,
+        name: "Group 3",
+        avatars: [
+          { bg: "#F39C12", skin: "#E67E22", hair: "#2C3E50", border: "#00FFFF" },
+          { bg: "#3498DB", skin: "#E74C3C", hair: "#2ECC71", border: "#00FFFF" },
+          { bg: "#F39C12", skin: "#E67E22", hair: "#2C3E50", border: "#00FFFF" },
+        ],
+        borderColor: "#00FFFF",
+      },
+      {
+        id: 4,
+        name: "Group 4",
+        avatars: [
+          { bg: "#F39C12", skin: "#E67E22", hair: "#2C3E50", border: "#FF4500" },
+          { bg: "#3498DB", skin: "#E74C3C", hair: "#2ECC71", border: "#FF4500" },
+          { bg: "#F39C12", skin: "#E67E22", hair: "#2C3E50", border: "#FF4500" },
+        ],
+        borderColor: "#FF4500",
+      },
+    ];
+
     return (
-      <div className="min-h-screen flex items-center justify-center px-5 py-8" style={bgStyle}>
+      <div className="min-h-screen flex items-center justify-center px-5 py-8">
+        <VideoBg />
         <div className="w-full max-w-[440px] flex flex-col items-center">
-          <img src="/logo.png" alt="Unreal Place" className="w-40 mb-2 cursor-pointer" onClick={() => { closeCamera(); setStep(1); }} />
+          <img src="/logo.png" alt="Unreal Place" className="w-40 mb-6 cursor-pointer" onClick={() => { closeCamera(); setStep(1); }} />
 
-          {/* Back button */}
-          <button
-            onClick={() => { closeCamera(); setStep(2); }}
-            className="self-start flex items-center gap-1.5 text-white/70 text-sm bg-transparent border-none cursor-pointer hover:text-white transition mb-2 -mt-1"
-          >
-            <svg xmlns="http://www.w3.org/2000/svg" className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-              <path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7" />
-            </svg>
-            Back
-          </button>
-
-          <h2 className="text-white text-xl font-bold mt-2 mb-1">Choose Your Look</h2>
-          <p className="text-white/50 text-sm mb-5">Take a selfie or pick an avatar</p>
-
-          {/* Camera section */}
+          {/* Realistic Group Photo Section */}
           <div className="w-full flex flex-col items-center mb-4">
             {cameraOpen ? (
               /* Live camera preview */
@@ -241,7 +294,7 @@ export default function SignUp() {
                   autoPlay
                   playsInline
                   muted
-                  className="w-48 h-48 rounded-full object-cover border-4 border-purple-500"
+                  className="w-60 h-60 rounded-2xl object-cover border-4 border-purple-500"
                   style={{ transform: "scaleX(-1)" }}
                 />
                 <canvas ref={canvasRef} className="hidden" />
@@ -261,92 +314,90 @@ export default function SignUp() {
                   </button>
                 </div>
               </div>
-            ) : selfiePreview ? (
-              /* Selfie preview */
+            ) : groupPhoto ? (
+              /* Group photo preview */
               <div className="flex flex-col items-center">
                 <img
-                  src={selfiePreview}
-                  alt="Your selfie"
-                  className="w-36 h-36 rounded-full object-cover border-4 border-green-500"
+                  src={groupPhoto}
+                  alt="Group photo"
+                  className="w-48 h-48 rounded-2xl object-cover border-4 border-green-500"
                 />
-                <div className="flex gap-3 mt-3">
-                  <button
-                    onClick={openCamera}
-                    className="px-4 py-2 rounded-lg text-white/80 text-xs border border-white/20 bg-transparent cursor-pointer hover:text-white transition"
-                  >
-                    Retake
-                  </button>
-                  <label className="px-4 py-2 rounded-lg text-white/80 text-xs border border-white/20 bg-transparent cursor-pointer hover:text-white transition">
-                    Upload
-                    <input type="file" accept="image/*" className="hidden" onChange={handleFileUpload} />
-                  </label>
-                </div>
-              </div>
-            ) : (
-              /* Camera / upload buttons */
-              <div className="flex items-center gap-4">
                 <button
                   onClick={openCamera}
-                  className="w-20 h-20 rounded-full bg-white/10 border-2 border-dashed border-white/30 flex items-center justify-center cursor-pointer hover:border-purple-400 hover:bg-white/5 transition"
+                  className="mt-3 px-4 py-2 rounded-lg text-white/80 text-xs border border-white/20 bg-transparent cursor-pointer hover:text-white transition"
                 >
+                  Retake
+                </button>
+              </div>
+            ) : (
+              /* Camera button */
+              <button
+                onClick={openCamera}
+                className="w-full flex flex-col items-center justify-center py-6 rounded-2xl bg-white/5 border-2 border-dashed border-white/20 cursor-pointer hover:border-purple-400 hover:bg-white/10 transition"
+              >
+                <div className="w-16 h-16 rounded-full bg-white/10 flex items-center justify-center mb-2">
                   <svg xmlns="http://www.w3.org/2000/svg" className="w-8 h-8 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
                     <path strokeLinecap="round" strokeLinejoin="round" d="M6.827 6.175A2.31 2.31 0 0 1 5.186 7.23c-.38.054-.757.112-1.134.175C2.999 7.58 2.25 8.507 2.25 9.574V18a2.25 2.25 0 0 0 2.25 2.25h15A2.25 2.25 0 0 0 21.75 18V9.574c0-1.067-.75-1.994-1.802-2.169a47.865 47.865 0 0 0-1.134-.175 2.31 2.31 0 0 1-1.64-1.055l-.822-1.316a2.192 2.192 0 0 0-1.736-1.039 48.774 48.774 0 0 0-5.232 0 2.192 2.192 0 0 0-1.736 1.039l-.821 1.316Z" />
                     <path strokeLinecap="round" strokeLinejoin="round" d="M16.5 12.75a4.5 4.5 0 1 1-9 0 4.5 4.5 0 0 1 9 0Z" />
                   </svg>
-                </button>
-                <div className="flex flex-col">
-                  <span className="text-white text-base font-semibold">Take a Selfie</span>
-                  <span className="text-white/40 text-xs mt-0.5">or</span>
-                  <label className="text-purple-400 text-sm cursor-pointer hover:underline mt-0.5">
-                    Upload a photo
-                    <input type="file" accept="image/*" className="hidden" onChange={handleFileUpload} />
-                  </label>
                 </div>
-              </div>
+                <span className="text-white text-base font-semibold">Realistic Group Photo</span>
+              </button>
             )}
           </div>
 
           {/* OR divider */}
-          <div className="flex items-center w-full my-3">
+          <div className="flex items-center w-full my-5">
             <div className="flex-1 h-px bg-white/20"></div>
-            <span className="px-4 text-white/60 text-sm font-semibold tracking-wider">OR PICK AN AVATAR</span>
+            <span className="px-4 text-white/60 text-sm font-semibold tracking-wider">OR</span>
             <div className="flex-1 h-px bg-white/20"></div>
           </div>
 
-          {/* Avatar grid */}
-          <div className="grid grid-cols-4 gap-3 w-full mb-6">
-            {AVATARS.map((av) => (
+          {/* Groups Grid */}
+          <div className="grid grid-cols-2 gap-4 w-full mb-6">
+            {groups.map((group) => (
               <button
-                key={av.id}
-                className={`p-2 rounded-xl flex items-center justify-center cursor-pointer border-2 transition bg-transparent hover:bg-white/5 ${
-                  selectedAvatar?.id === av.id
-                    ? "border-purple-500 bg-purple-500/10"
-                    : "border-transparent"
+                key={group.id}
+                onClick={() => {
+                  setSelectedGroup(group.id);
+                  setGroupPhoto(null);
+                }}
+                className={`flex flex-col items-center py-6 px-4 rounded-2xl bg-white/5 border-3 cursor-pointer transition hover:bg-white/10 ${
+                  selectedGroup === group.id ? "border-4" : "border-2"
                 }`}
-                onClick={() => pickAvatar(av)}
+                style={{
+                  borderColor: selectedGroup === group.id ? group.borderColor : "rgba(255,255,255,0.1)",
+                }}
               >
-                <AvatarSVG bg={av.bg} skin={av.skin} hair={av.hair} size={56} />
+                <span className="text-white text-sm font-semibold mb-3">{group.name}</span>
+                <div className="relative flex items-center justify-center" style={{ width: "120px", height: "50px" }}>
+                  {group.avatars.map((avatar, idx) => (
+                    <div
+                      key={idx}
+                      className="absolute"
+                      style={{
+                        left: `${idx * 28}px`,
+                        zIndex: idx,
+                      }}
+                    >
+                      <div
+                        className="rounded-full border-[3px] overflow-hidden"
+                        style={{ borderColor: group.borderColor }}
+                      >
+                        <AvatarSVG bg={avatar.bg} skin={avatar.skin} hair={avatar.hair} size={44} />
+                      </div>
+                    </div>
+                  ))}
+                </div>
               </button>
             ))}
           </div>
-
-          {/* Selected indicator */}
-          {(selfiePreview || selectedAvatar) && (
-            <div className="flex items-center gap-2 mb-4">
-              <svg className="w-4 h-4 text-green-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
-              </svg>
-              <span className="text-green-400 text-sm">
-                {selfiePreview ? "Selfie selected" : `Avatar selected`}
-              </span>
-            </div>
-          )}
 
           {/* Signup button */}
           <button
             className="w-full py-4 rounded-2xl text-white text-lg font-semibold cursor-pointer border-none transition hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed"
             style={btnStyle}
-            disabled={submitting}
+            disabled={submitting || (!groupPhoto && !selectedGroup)}
             onClick={handleSignup}
           >
             {submitting ? "Submitting…" : "Signup"}
@@ -354,8 +405,7 @@ export default function SignUp() {
 
           {/* Terms */}
           <p className="text-white/60 text-xs mt-4 text-center">
-            * By Clicking <span className="font-bold text-white">Signup</span> I
-            Accept{" "}
+            * By Clicking <span className="font-bold text-white">Signup</span> I Accept{" "}
             <span className="text-pink-400 cursor-pointer">Terms and Conditions</span>
           </p>
         </div>
@@ -368,8 +418,8 @@ export default function SignUp() {
     return (
       <div
         className="min-h-screen flex items-center justify-center px-5 py-8"
-        style={bgStyle}
       >
+        <VideoBg />
         <div className="w-full max-w-[400px] flex flex-col items-center">
         <img src="/logo.png" alt="Unreal Place" className="w-40 mb-2 cursor-pointer" onClick={() => setStep(1)} />
 
@@ -488,8 +538,8 @@ export default function SignUp() {
   return (
     <div
       className="min-h-screen flex items-center justify-center px-5 py-8"
-      style={bgStyle}
     >
+      <VideoBg />
       <div className="w-full max-w-[400px] flex flex-col items-center">
         <img src="/logo.png" alt="Unreal Place" className="w-40 mb-2 cursor-pointer" onClick={() => setStep(1)} />
 

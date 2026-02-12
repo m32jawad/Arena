@@ -5,6 +5,8 @@ import { ThemeProvider } from './context/ThemeContext';
 import Layout from './dashboard/layout/Layout';
 import Login from './dashboard/components/Login';
 import SignUp from './signup/SignUp';
+import LeaderboardPage from './leaderboard/LeaderboardPage';
+import LeaderboardPage2 from './leaderboard/LeaderboardPage2';
 
 function AppContent() {
   const { user, loading } = useAuth();
@@ -28,6 +30,8 @@ export default function App() {
         <ThemeProvider>
           <Routes>
             <Route path="/signup" element={<SignUp />} />
+            <Route path="/leaderboard" element={<LeaderboardPage />} />
+            <Route path="/leaderboard2" element={<LeaderboardPage2 />} />
             <Route path="*" element={<AppContent />} />
           </Routes>
         </ThemeProvider>

@@ -1,0 +1,457 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Leaderboard Test Panel</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: 'Segoe UI', system-ui, sans-serif; background: #0f172a; color: #e2e8f0; min-height: 100vh; }
+    
+    .layout { display: grid; grid-template-columns: 420px 1fr; min-height: 100vh; }
+    
+    /* Left panel — controls */
+    .panel { padding: 20px; overflow-y: auto; border-right: 1px solid #334155; }
+    h1 { font-size: 20px; margin-bottom: 16px; color: #38bdf8; display: flex; align-items: center; gap: 8px; }
+    h2 { font-size: 14px; margin-bottom: 10px; color: #94a3b8; text-transform: uppercase; letter-spacing: 1px; }
+    
+    .card { background: #1e293b; border: 1px solid #334155; border-radius: 10px; padding: 16px; margin-bottom: 12px; }
+    
+    label { display: block; font-size: 11px; color: #94a3b8; margin-bottom: 3px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; }
+    input, select { width: 100%; padding: 8px 10px; background: #0f172a; border: 1px solid #334155; border-radius: 6px; color: #e2e8f0; font-size: 13px; margin-bottom: 8px; }
+    input:focus, select:focus { outline: none; border-color: #38bdf8; }
+    
+    .row { display: flex; gap: 8px; }
+    .row > * { flex: 1; }
+    
+    .btn { padding: 8px 16px; border: none; border-radius: 6px; font-size: 12px; font-weight: 600; cursor: pointer; transition: .15s; }
+    .btn:hover { opacity: 0.9; transform: translateY(-1px); }
+    .btn-primary { background: #3b82f6; color: white; }
+    .btn-success { background: #22c55e; color: white; }
+    .btn-danger { background: #ef4444; color: white; }
+    .btn-warning { background: #f59e0b; color: #1e293b; }
+    .btn-purple { background: #a855f7; color: white; }
+    .btn-sm { padding: 5px 10px; font-size: 11px; }
+    .btn-block { width: 100%; }
+    
+    .actions { display: flex; gap: 6px; margin-top: 10px; flex-wrap: wrap; }
+    
+    /* Team list */
+    .team-item { display: flex; align-items: center; gap: 10px; padding: 10px; background: #0f172a; border: 1px solid #334155; border-radius: 8px; margin-bottom: 6px; }
+    .team-item .avatar { width: 36px; height: 36px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 14px; color: white; flex-shrink: 0; }
+    .team-item .info { flex: 1; min-width: 0; }
+    .team-item .name { font-size: 13px; font-weight: 600; color: #e2e8f0; }
+    .team-item .meta { font-size: 11px; color: #64748b; }
+    .team-item .points-display { font-size: 16px; font-weight: 700; color: #fbbf24; min-width: 50px; text-align: right; }
+    .team-item .team-actions { display: flex; gap: 4px; flex-shrink: 0; }
+    
+    .points-input { width: 70px !important; text-align: center; margin: 0 !important; }
+    
+    /* Checkpoints */
+    .checkpoint-row { display: flex; align-items: center; gap: 6px; padding: 6px 8px; background: #0f172a; border-radius: 6px; margin-bottom: 4px; font-size: 12px; }
+    .checkpoint-dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
+    .checkpoint-dot.cleared { background: #a855f7; box-shadow: 0 0 6px rgba(168,85,247,0.5); }
+    .checkpoint-dot.pending { background: transparent; border: 2px solid rgba(168,85,247,0.4); }
+    
+    /* Right panel — iframes */
+    .preview { display: flex; flex-direction: column; }
+    .preview-tabs { display: flex; background: #1e293b; border-bottom: 1px solid #334155; }
+    .preview-tab { padding: 10px 20px; font-size: 13px; font-weight: 600; cursor: pointer; border: none; background: none; color: #64748b; border-bottom: 2px solid transparent; transition: .15s; }
+    .preview-tab.active { color: #38bdf8; border-bottom-color: #38bdf8; }
+    .preview-tab:hover { color: #94a3b8; }
+    .iframe-wrap { flex: 1; position: relative; }
+    .iframe-wrap iframe { width: 100%; height: 100%; border: none; background: #000; }
+    
+    /* Status messages */
+    .toast { position: fixed; bottom: 20px; right: 20px; padding: 10px 16px; border-radius: 8px; font-size: 12px; font-weight: 600; z-index: 999; animation: slideIn .3s ease; }
+    .toast-success { background: #064e3b; color: #34d399; border: 1px solid #065f46; }
+    .toast-error { background: #450a0a; color: #fca5a5; border: 1px solid #7f1d1d; }
+    @keyframes slideIn { from { transform: translateX(100px); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
+    
+    .empty-state { text-align: center; padding: 30px; color: #475569; font-size: 13px; }
+    
+    .divider { height: 1px; background: #334155; margin: 14px 0; }
+    
+    /* Scrollbar */
+    .panel::-webkit-scrollbar { width: 6px; }
+    .panel::-webkit-scrollbar-track { background: transparent; }
+    .panel::-webkit-scrollbar-thumb { background: #334155; border-radius: 3px; }
+    
+    /* Avatar colors */
+    .av-1 { background: #6C3483; } .av-2 { background: #1ABC9C; } .av-3 { background: #2980B9; }
+    .av-4 { background: #E74C3C; } .av-5 { background: #8E44AD; } .av-6 { background: #F39C12; }
+    .av-7 { background: #2ECC71; } .av-8 { background: #3498DB; }
+    
+    .controller-badge { display: inline-flex; align-items: center; gap: 4px; padding: 3px 8px; background: #1e293b; border: 1px solid #334155; border-radius: 4px; font-size: 11px; color: #94a3b8; }
+  </style>
+</head>
+<body>
+
+<div class="layout">
+  <!-- ═══ LEFT PANEL: Controls ═══ -->
+  <div class="panel" id="controlPanel">
+    <h1>
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#38bdf8" stroke-width="2"><path d="M12 20V10M18 20V4M6 20v-4"/></svg>
+      Leaderboard Test
+    </h1>
+
+    <!-- Create Team -->
+    <div class="card">
+      <h2>➕ Create Team</h2>
+      <div>
+        <label>Team Name</label>
+        <input type="text" id="teamName" placeholder="Team Alpha" value="" />
+      </div>
+      <div class="row">
+        <div>
+          <label>Points</label>
+          <input type="number" id="teamPoints" placeholder="0" value="100" />
+        </div>
+        <div>
+          <label>Team Size</label>
+          <select id="teamSize">
+            <option value="1">1</option>
+            <option value="2" selected>2</option>
+            <option value="3">3</option>
+            <option value="4">4</option>
+            <option value="5">5</option>
+            <option value="6">6</option>
+          </select>
+        </div>
+      </div>
+      <div class="row">
+        <div>
+          <label>Session (mins)</label>
+          <input type="number" id="sessionMins" value="60" />
+        </div>
+        <div>
+          <label>Avatar</label>
+          <select id="avatarId">
+            <option value="">None</option>
+            <option value="avatar-1">Avatar 1 (Purple)</option>
+            <option value="avatar-2">Avatar 2 (Teal)</option>
+            <option value="avatar-3">Avatar 3 (Blue)</option>
+            <option value="avatar-4">Avatar 4 (Red)</option>
+            <option value="avatar-5">Avatar 5 (Violet)</option>
+            <option value="avatar-6">Avatar 6 (Orange)</option>
+            <option value="avatar-7">Avatar 7 (Green)</option>
+            <option value="avatar-8">Avatar 8 (Sky)</option>
+          </select>
+        </div>
+      </div>
+      <div class="actions">
+        <button class="btn btn-success btn-block" onclick="createTeam()">Create Team</button>
+      </div>
+    </div>
+
+    <!-- Quick Create Multiple -->
+    <div class="card">
+      <h2>⚡ Quick Create</h2>
+      <p style="font-size:11px;color:#64748b;margin-bottom:8px;">Create multiple teams with random points in one click</p>
+      <div class="row">
+        <div>
+          <label>How many?</label>
+          <select id="quickCount">
+            <option value="3">3 teams</option>
+            <option value="5" selected>5 teams</option>
+            <option value="8">8 teams</option>
+            <option value="10">10 teams</option>
+          </select>
+        </div>
+        <div>
+          <label>Max Points</label>
+          <input type="number" id="quickMaxPoints" value="500" />
+        </div>
+      </div>
+      <div class="actions">
+        <button class="btn btn-purple btn-block" onclick="quickCreate()">Quick Create Teams</button>
+      </div>
+    </div>
+
+    <div class="divider"></div>
+
+    <!-- Controllers -->
+    <div class="card">
+      <h2>🎯 Controllers / Checkpoints</h2>
+      <div id="controllerList">
+        <div class="empty-state">Loading controllers...</div>
+      </div>
+    </div>
+
+    <div class="divider"></div>
+
+    <!-- Teams List -->
+    <div class="card">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
+        <h2 style="margin:0;">👥 Teams (<span id="teamCount">0</span>)</h2>
+        <div style="display:flex;gap:6px;">
+          <button class="btn btn-primary btn-sm" onclick="refreshAll()">↻ Refresh</button>
+          <button class="btn btn-danger btn-sm" onclick="resetAll()">🗑 Reset All</button>
+        </div>
+      </div>
+      <div id="teamList">
+        <div class="empty-state">No teams yet. Create one above!</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══ RIGHT PANEL: Leaderboard Preview ═══ -->
+  <div class="preview">
+    <div class="preview-tabs">
+      <button class="preview-tab active" id="tabLB1" onclick="switchTab('lb1')">Leaderboard 1</button>
+      <button class="preview-tab" id="tabLB2" onclick="switchTab('lb2')">Leaderboard 2</button>
+      <button class="preview-tab" id="tabBoth" onclick="switchTab('both')">Both (Split)</button>
+      <div style="flex:1"></div>
+      <button class="btn btn-sm btn-warning" style="margin:6px 10px;" onclick="refreshIframes()">↻ Refresh Preview</button>
+    </div>
+    <div class="iframe-wrap" id="iframeWrap">
+      <iframe id="iframe1" src="http://localhost:3000/leaderboard"></iframe>
+    </div>
+  </div>
+</div>
+
+<!-- Toast container -->
+<div id="toastContainer"></div>
+
+<script>
+const API = '/api/auth';
+const FRONTEND = 'http://localhost:3000';
+const TEAM_NAMES = ['Alpha', 'Bravo', 'Charlie', 'Delta', 'Echo', 'Foxtrot', 'Golf', 'Hotel', 'India', 'Juliet', 'Kilo', 'Lima', 'Mike', 'Nova', 'Oscar', 'Papa', 'Quebec', 'Romeo', 'Sierra', 'Tango'];
+const AVATAR_IDS = ['avatar-1','avatar-2','avatar-3','avatar-4','avatar-5','avatar-6','avatar-7','avatar-8'];
+const AVATAR_COLORS = {
+  'avatar-1': '#6C3483', 'avatar-2': '#1ABC9C', 'avatar-3': '#2980B9', 'avatar-4': '#E74C3C',
+  'avatar-5': '#8E44AD', 'avatar-6': '#F39C12', 'avatar-7': '#2ECC71', 'avatar-8': '#3498DB',
+};
+
+let teams = [];
+let controllers = [];
+let currentTab = 'lb1';
+
+// ─── CSRF helper ───
+function getCSRFToken() {
+  const match = document.cookie.match(/csrftoken=([^;]+)/);
+  return match ? match[1] : '';
+}
+
+// ─── API helpers ───
+async function apiPost(url, body = {}) {
+  const res = await fetch(url, {
+    method: 'POST',
+    credentials: 'include',
+    headers: {
+      'Content-Type': 'application/json',
+      'X-CSRFToken': getCSRFToken(),
+    },
+    body: JSON.stringify(body),
+  });
+  return { status: res.status, data: await res.json() };
+}
+
+async function apiGet(url) {
+  const res = await fetch(url, { credentials: 'include' });
+  return await res.json();
+}
+
+// ─── Toast ───
+function showToast(msg, type = 'success') {
+  const el = document.createElement('div');
+  el.className = `toast toast-${type}`;
+  el.textContent = msg;
+  document.getElementById('toastContainer').appendChild(el);
+  setTimeout(() => el.remove(), 2500);
+}
+
+// ─── Create Team ───
+async function createTeam() {
+  const name = document.getElementById('teamName').value.trim() || ('Team ' + TEAM_NAMES[Math.floor(Math.random() * TEAM_NAMES.length)]);
+  const points = parseInt(document.getElementById('teamPoints').value) || 0;
+  const team_size = parseInt(document.getElementById('teamSize').value) || 2;
+  const session_minutes = parseInt(document.getElementById('sessionMins').value) || 60;
+  const avatar_id = document.getElementById('avatarId').value;
+
+  const { status, data } = await apiPost(`${API}/test/create-team/`, { party_name: name, points, team_size, session_minutes, avatar_id });
+  if (status === 201) {
+    showToast(`Created "${name}" with ${points} pts`);
+    document.getElementById('teamName').value = '';
+    refreshAll();
+  } else {
+    showToast(data.error || 'Failed', 'error');
+  }
+}
+
+// ─── Quick Create ───
+async function quickCreate() {
+  const count = parseInt(document.getElementById('quickCount').value);
+  const maxPts = parseInt(document.getElementById('quickMaxPoints').value) || 500;
+  const used = new Set();
+
+  for (let i = 0; i < count; i++) {
+    let name;
+    do { name = TEAM_NAMES[Math.floor(Math.random() * TEAM_NAMES.length)]; } while (used.has(name) && used.size < TEAM_NAMES.length);
+    used.add(name);
+    const points = Math.floor(Math.random() * maxPts);
+    const avatar_id = AVATAR_IDS[Math.floor(Math.random() * AVATAR_IDS.length)];
+    await apiPost(`${API}/test/create-team/`, {
+      party_name: 'Team ' + name,
+      points,
+      team_size: Math.floor(Math.random() * 4) + 1,
+      session_minutes: 60,
+      avatar_id,
+    });
+  }
+  showToast(`Created ${count} teams`);
+  refreshAll();
+}
+
+// ─── Update Points ───
+async function updatePoints(id) {
+  const input = document.getElementById(`pts-${id}`);
+  const points = parseInt(input.value);
+  if (isNaN(points)) return;
+  
+  const { status } = await apiPost(`${API}/test/update-points/${id}/`, { points });
+  if (status === 200) {
+    showToast(`Points updated to ${points}`);
+    refreshAll();
+  } else {
+    showToast('Failed to update', 'error');
+  }
+}
+
+// ─── Delete Team ───
+async function deleteTeam(id) {
+  const { status } = await apiPost(`${API}/test/delete-team/${id}/`);
+  if (status === 200) {
+    showToast('Team deleted');
+    refreshAll();
+  }
+}
+
+// ─── Clear Checkpoint ───
+async function clearCheckpoint(sessionId, controllerId) {
+  const { status, data } = await apiPost(`${API}/test/clear-checkpoint/`, { session_id: sessionId, controller_id: controllerId });
+  showToast(data.message + (data.total_points !== undefined ? ` (${data.total_points} pts)` : ''));
+  refreshAll();
+}
+
+// ─── Reset All ───
+async function resetAll() {
+  if (!confirm('Delete ALL teams and checkpoints?')) return;
+  await apiPost(`${API}/test/reset-all/`);
+  showToast('Everything reset');
+  refreshAll();
+}
+
+// ─── Refresh data ───
+async function refreshAll() {
+  // Fetch leaderboard data
+  try {
+    teams = await apiGet(`${API}/public/leaderboard/`);
+    if (!Array.isArray(teams)) teams = [];
+  } catch { teams = []; }
+
+  // Fetch controllers
+  try {
+    controllers = await apiGet(`${API}/public/controllers/`);
+    if (!Array.isArray(controllers)) controllers = [];
+  } catch { controllers = []; }
+
+  renderTeams();
+  renderControllers();
+  
+  // Refresh iframes with a slight delay so API data settles
+  setTimeout(refreshIframes, 300);
+}
+
+// ─── Render Teams ───
+function renderTeams() {
+  const container = document.getElementById('teamList');
+  document.getElementById('teamCount').textContent = teams.length;
+
+  if (teams.length === 0) {
+    container.innerHTML = '<div class="empty-state">No teams yet. Create one above!</div>';
+    return;
+  }
+
+  // Get cleared checkpoint IDs per team
+  container.innerHTML = teams.map((t, idx) => {
+    const avColor = AVATAR_COLORS[t.avatar_id] || '#6366f1';
+    const initial = (t.name || '?').charAt(0).toUpperCase();
+    const clearedIds = (t.checkpoints || []).map(c => c.controller_id);
+
+    // Checkpoint circles
+    let cpHtml = '';
+    if (controllers.length > 0) {
+      cpHtml = '<div style="display:flex;gap:3px;margin-top:4px;">' +
+        controllers.map(c => {
+          const cleared = clearedIds.includes(c.id);
+          return `<div class="checkpoint-dot ${cleared ? 'cleared' : 'pending'}" title="${c.name}${cleared ? ' ✓' : ''}" 
+            style="cursor:pointer;" onclick="clearCheckpoint(${t.id}, ${c.id})"></div>`;
+        }).join('') + '</div>';
+    }
+
+    return `
+      <div class="team-item">
+        <div class="avatar" style="background:${avColor}">${initial}</div>
+        <div class="info">
+          <div class="name">#${idx + 1} ${t.name} ${t.session_status === 'live' ? '<span style="color:#22c55e;font-size:10px;">● LIVE</span>' : '<span style="color:#64748b;font-size:10px;">● ended</span>'}</div>
+          <div class="meta">Team of ${t.team_size} · ${t.checkpoints_cleared || 0}/${t.total_controllers || 0} checkpoints</div>
+          ${cpHtml}
+        </div>
+        <div style="display:flex;flex-direction:column;align-items:flex-end;gap:4px;">
+          <div style="display:flex;align-items:center;gap:4px;">
+            <input type="number" class="points-input" id="pts-${t.id}" value="${t.points}" />
+            <button class="btn btn-warning btn-sm" onclick="updatePoints(${t.id})">Set</button>
+          </div>
+          <button class="btn btn-danger btn-sm" onclick="deleteTeam(${t.id})" style="font-size:10px;">✕ Delete</button>
+        </div>
+      </div>`;
+  }).join('');
+}
+
+// ─── Render Controllers ───
+function renderControllers() {
+  const container = document.getElementById('controllerList');
+  if (controllers.length === 0) {
+    container.innerHTML = '<div class="empty-state">No controllers found.<br><span style="font-size:10px;">Add controllers in the admin dashboard first.</span></div>';
+    return;
+  }
+  container.innerHTML = '<div style="display:flex;flex-wrap:wrap;gap:6px;">' +
+    controllers.map(c => `<span class="controller-badge">🎯 ${c.name}</span>`).join('') +
+    '</div>' +
+    '<p style="font-size:10px;color:#475569;margin-top:6px;">Click the dots next to each team to clear checkpoints</p>';
+}
+
+// ─── iFrame management ───
+function switchTab(tab) {
+  currentTab = tab;
+  document.getElementById('tabLB1').classList.toggle('active', tab === 'lb1');
+  document.getElementById('tabLB2').classList.toggle('active', tab === 'lb2');
+  document.getElementById('tabBoth').classList.toggle('active', tab === 'both');
+
+  const wrap = document.getElementById('iframeWrap');
+
+  if (tab === 'lb1') {
+    wrap.innerHTML = `<iframe id="iframe1" src="${FRONTEND}/leaderboard"></iframe>`;
+  } else if (tab === 'lb2') {
+    wrap.innerHTML = `<iframe id="iframe1" src="${FRONTEND}/leaderboard2"></iframe>`;
+  } else {
+    wrap.innerHTML = `
+      <div style="display:grid;grid-template-columns:1fr 1fr;height:100%;">
+        <iframe src="${FRONTEND}/leaderboard" style="border-right:1px solid #334155;"></iframe>
+        <iframe src="${FRONTEND}/leaderboard2"></iframe>
+      </div>`;
+  }
+}
+
+function refreshIframes() {
+  const iframes = document.querySelectorAll('#iframeWrap iframe');
+  iframes.forEach(f => { f.src = f.src; });
+}
+
+// ─── Init ───
+document.addEventListener('DOMContentLoaded', refreshAll);
+</script>
+
+</body>
+</html>

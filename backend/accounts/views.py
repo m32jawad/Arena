@@ -1,6 +1,6 @@
 from django.contrib.auth import authenticate, login, logout
 from django.contrib.auth.models import User
-from rest_framework.decorators import api_view, permission_classes, parser_classes
+from rest_framework.decorators import api_view, permission_classes, parser_classes, authentication_classes
 from rest_framework.parsers import MultiPartParser, FormParser
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
@@ -847,3 +847,177 @@ def rfid_test_page(request):
     """Serve the RFID API test page."""
     from django.shortcuts import render
     return render(request, 'rfid_test.html')
+
+
+# ── Public Leaderboard ──
+
+@api_view(['GET'])
+@permission_classes([AllowAny])
+def public_leaderboard(request):
+    """Return leaderboard data for all approved (live) and ended sessions,
+    sorted by points descending. Includes checkpoint progress."""
+    from django.utils import timezone
+    from datetime import timedelta
+
+    now = timezone.now()
+    total_controllers = Controller.objects.count()
+
+    # Include both live (approved) and ended sessions
+    sessions = PendingSignup.objects.filter(
+        status__in=['approved', 'ended']
+    ).order_by('-points', 'created_at')
+
+    result = []
+    for p in sessions:
+        # Build photo / avatar info
+        photo_url = ''
+        if p.profile_photo:
+            photo_url = request.build_absolute_uri(p.profile_photo.url)
+
+        # Count checkpoints cleared
+        checkpoints = Checkpoint.objects.filter(session=p).select_related('controller')
+        checkpoints_cleared = checkpoints.count()
+        checkpoint_list = [
+            {
+                'controller_id': cp.controller.id,
+                'controller_name': cp.controller.name,
+                'cleared_at': cp.cleared_at.isoformat(),
+            }
+            for cp in checkpoints
+        ]
+
+        # Calculate remaining time for live sessions
+        remaining_minutes = 0
+        session_status = p.status
+        if p.status == 'approved' and p.approved_at:
+            end_time = p.approved_at + timedelta(minutes=p.session_minutes)
+            if now < end_time:
+                remaining_minutes = max(0, int((end_time - now).total_seconds() // 60))
+                session_status = 'live'
+            else:
+                session_status = 'ended'
+
+        result.append({
+            'id': p.id,
+            'name': p.party_name,
+            'email': p.email,
+            'team_size': p.team_size,
+            'points': p.points,
+            'profile_photo': photo_url,
+            'avatar_id': p.avatar_id,
+            'storyline_title': p.storyline.title if p.storyline else '',
+            'session_minutes': p.session_minutes,
+            'remaining_minutes': remaining_minutes,
+            'session_status': session_status,
+            'checkpoints_cleared': checkpoints_cleared,
+            'total_controllers': total_controllers,
+            'checkpoints': checkpoint_list,
+            'created_at': p.created_at.isoformat() if p.created_at else '',
+            'approved_at': p.approved_at.isoformat() if p.approved_at else '',
+        })
+
+    return Response(result)
+
+
+@api_view(['GET'])
+@permission_classes([AllowAny])
+def public_controllers(request):
+    """Return the list of controllers/checkpoints (public, for leaderboard circles)."""
+    controllers = Controller.objects.all()
+    return Response([
+        {'id': c.id, 'name': c.name}
+        for c in controllers
+    ])
+
+
+# ── Leaderboard Test helpers ──
+
+@api_view(['POST'])
+@authentication_classes([])
+@permission_classes([AllowAny])
+def test_create_team(request):
+    """Quick-create an approved team with custom points for leaderboard testing."""
+    from django.utils import timezone
+    data = request.data
+    party_name = data.get('party_name', 'Test Team').strip()
+    points = int(data.get('points', 0))
+    team_size = int(data.get('team_size', 1))
+    session_minutes = int(data.get('session_minutes', 60))
+    avatar_id = data.get('avatar_id', '').strip()
+
+    p = PendingSignup.objects.create(
+        party_name=party_name,
+        team_size=team_size,
+        points=points,
+        status='approved',
+        approved_at=timezone.now(),
+        session_minutes=session_minutes,
+        avatar_id=avatar_id or '',
+    )
+    return Response(_serialize_pending(p, request), status=status.HTTP_201_CREATED)
+
+
+@api_view(['POST'])
+@authentication_classes([])
+@permission_classes([AllowAny])
+def test_update_points(request, pk):
+    """Update points for a session (for testing)."""
+    try:
+        p = PendingSignup.objects.get(pk=pk)
+    except PendingSignup.DoesNotExist:
+        return Response({'error': 'Not found.'}, status=status.HTTP_404_NOT_FOUND)
+    points = request.data.get('points')
+    if points is not None:
+        p.points = int(points)
+        p.save(update_fields=['points'])
+    return Response(_serialize_pending(p, request))
+
+
+@api_view(['POST'])
+@authentication_classes([])
+@permission_classes([AllowAny])
+def test_clear_checkpoint(request):
+    """Clear a checkpoint for a session (for testing)."""
+    session_id = request.data.get('session_id')
+    controller_id = request.data.get('controller_id')
+    if not session_id or not controller_id:
+        return Response({'error': 'session_id and controller_id required.'}, status=status.HTTP_400_BAD_REQUEST)
+    try:
+        p = PendingSignup.objects.get(pk=session_id)
+        c = Controller.objects.get(pk=controller_id)
+    except (PendingSignup.DoesNotExist, Controller.DoesNotExist):
+        return Response({'error': 'Session or controller not found.'}, status=status.HTTP_404_NOT_FOUND)
+    cp, created = Checkpoint.objects.get_or_create(session=p, controller=c)
+    if created:
+        p.points += 1
+        p.save(update_fields=['points'])
+    return Response({'message': 'Checkpoint cleared.' if created else 'Already cleared.', 'total_points': p.points})
+
+
+@api_view(['POST'])
+@authentication_classes([])
+@permission_classes([AllowAny])
+def test_delete_team(request, pk):
+    """Delete a test team."""
+    try:
+        p = PendingSignup.objects.get(pk=pk)
+    except PendingSignup.DoesNotExist:
+        return Response({'error': 'Not found.'}, status=status.HTTP_404_NOT_FOUND)
+    p.delete()
+    return Response({'message': 'Deleted.'})
+
+
+@api_view(['POST'])
+@authentication_classes([])
+@permission_classes([AllowAny])
+def test_reset_all(request):
+    """Delete all sessions and checkpoints (for testing)."""
+    Checkpoint.objects.all().delete()
+    PendingSignup.objects.all().delete()
+    return Response({'message': 'All sessions and checkpoints cleared.'})
+
+
+def leaderboard_test_page(request):
+    """Serve the leaderboard test page."""
+    from django.shortcuts import render
+    return render(request, 'leaderboard_test.html')

@@ -35,4 +35,16 @@ urlpatterns = [
     path('rfid/checkpoint/', views.rfid_checkpoint, name='rfid-checkpoint'),
     path('rfid/status/', views.rfid_status, name='rfid-status'),
     path('rfid-test/', views.rfid_test_page, name='rfid-test'),
+
+    # Public leaderboard
+    path('public/leaderboard/', views.public_leaderboard, name='public-leaderboard'),
+
+    # Leaderboard test page
+    path('leaderboard-test/', views.leaderboard_test_page, name='leaderboard-test'),
+    path('test/create-team/', views.test_create_team, name='test-create-team'),
+    path('test/update-points/<int:pk>/', views.test_update_points, name='test-update-points'),
+    path('test/clear-checkpoint/', views.test_clear_checkpoint, name='test-clear-checkpoint'),
+    path('test/delete-team/<int:pk>/', views.test_delete_team, name='test-delete-team'),
+    path('test/reset-all/', views.test_reset_all, name='test-reset-all'),
+    path('public/controllers/', views.public_controllers, name='public-controllers'),
 ]

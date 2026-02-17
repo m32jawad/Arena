@@ -1,4 +1,5 @@
 from django.db import models
+from django.contrib.auth.models import User
 
 
 class GeneralSetting(models.Model):
@@ -152,3 +153,24 @@ class Checkpoint(models.Model):
 
     def __str__(self):
         return f'{self.session.party_name} @ {self.controller.name}'
+
+
+class StaffProfile(models.Model):
+    """Stores additional information for staff members, including RFID tag."""
+    user = models.OneToOneField(
+        User, on_delete=models.CASCADE, related_name='staff_profile'
+    )
+    rfid_tag = models.CharField(
+        max_length=100, blank=True, default='',
+        help_text='RFID tag for staff identification and controller operations'
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = 'Staff Profile'
+        verbose_name_plural = 'Staff Profiles'
+
+    def __str__(self):
+        return f'{self.user.username} - RFID Profile'
+

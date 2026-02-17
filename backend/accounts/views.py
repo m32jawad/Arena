@@ -6,7 +6,7 @@ from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework import status
 
-from .models import Storyline, GeneralSetting, DashboardTheme, Controller, PendingSignup, Checkpoint
+from .models import Storyline, GeneralSetting, DashboardTheme, Controller, PendingSignup, Checkpoint, StaffProfile
 
 
 @api_view(['POST'])
@@ -60,6 +60,8 @@ def me_view(request):
 
 
 def _serialize_user(u):
+    # Get or create staff profile for the user
+    staff_profile, _ = StaffProfile.objects.get_or_create(user=u)
     return {
         'id': u.id,
         'username': u.username,
@@ -69,6 +71,7 @@ def _serialize_user(u):
         'is_staff': u.is_staff,
         'is_superuser': u.is_superuser,
         'is_active': u.is_active,
+        'rfid_tag': staff_profile.rfid_tag,
     }
 
 
@@ -90,6 +93,7 @@ def staff_list_create(request):
     first_name = data.get('first_name', '').strip()
     last_name = data.get('last_name', '').strip()
     is_staff = data.get('is_staff', True)
+    rfid_tag = data.get('rfid_tag', '').strip()
 
     if not username or not password:
         return Response({'error': 'Username and password are required.'}, status=status.HTTP_400_BAD_REQUEST)
@@ -104,6 +108,12 @@ def staff_list_create(request):
         last_name=last_name,
         is_staff=is_staff,
     )
+    
+    # Create or update staff profile with RFID tag
+    staff_profile, _ = StaffProfile.objects.get_or_create(user=user)
+    staff_profile.rfid_tag = rfid_tag
+    staff_profile.save()
+    
     return Response(_serialize_user(user), status=status.HTTP_201_CREATED)
 
 
@@ -133,6 +143,13 @@ def staff_detail(request, pk):
         if new_password:
             user.set_password(new_password)
         user.save()
+        
+        # Update staff profile RFID tag if provided
+        if 'rfid_tag' in data:
+            staff_profile, _ = StaffProfile.objects.get_or_create(user=user)
+            staff_profile.rfid_tag = data.get('rfid_tag', '').strip()
+            staff_profile.save()
+        
         return Response(_serialize_user(user))
 
     if request.method == 'DELETE':
@@ -841,6 +858,54 @@ def rfid_status(request):
     ]
 
     return Response(data)
+
+
+@api_view(['POST'])
+@permission_classes([AllowAny])
+def rfid_check_staff(request):
+    """Check if the provided RFID belongs to a valid staff member.
+
+    Body: { "rfid": "<tag>" }
+    Returns whether the RFID belongs to a staff member, and if so, the staff details.
+    """
+    rfid = request.data.get('rfid', '').strip()
+    if not rfid:
+        return Response({'error': 'RFID tag is required.'}, status=status.HTTP_400_BAD_REQUEST)
+
+    try:
+        # Look up staff profile by RFID tag
+        staff_profile = StaffProfile.objects.select_related('user').get(rfid_tag=rfid)
+        user = staff_profile.user
+        
+        # Check if the user is active and is staff
+        if not user.is_active:
+            return Response({
+                'is_staff': False,
+                'error': 'Staff account is inactive.'
+            }, status=status.HTTP_403_FORBIDDEN)
+        
+        if not user.is_staff:
+            return Response({
+                'is_staff': False,
+                'error': 'User is not a staff member.'
+            }, status=status.HTTP_403_FORBIDDEN)
+        
+        # Return staff info
+        return Response({
+            'is_staff': True,
+            'staff_id': user.id,
+            'username': user.username,
+            'first_name': user.first_name,
+            'last_name': user.last_name,
+            'email': user.email,
+            'is_superuser': user.is_superuser,
+        })
+        
+    except StaffProfile.DoesNotExist:
+        return Response({
+            'is_staff': False,
+            'error': 'No staff member found with this RFID tag.'
+        }, status=status.HTTP_404_NOT_FOUND)
 
 
 def rfid_test_page(request):

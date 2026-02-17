@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   LayoutDashboard,
   Clock,
@@ -75,14 +75,43 @@ function getMainBgStyle(theme) {
 }
 
 export default function Layout() {
-  const { user, logout } = useAuth();
+  const { user, logout, apiFetch } = useAuth();
   const { theme } = useTheme();
   const isSuperuser = user?.is_superuser;
   const [active, setActive] = useState(isSuperuser ? 'Dashboard' : 'Pending');
+  const [pendingCount, setPendingCount] = useState(0);
+  const [sessionCount, setSessionCount] = useState(0);
 
   const headingFont = theme.heading_font || 'inherit';
   const textFont = theme.text_font || 'inherit';
   const primaryColor = theme.primary_color || '#CB30E0';
+
+  const API_BASE = process.env.REACT_APP_API_BASE || 'http://localhost:8000/api';
+
+  const fetchCounts = useCallback(async () => {
+    try {
+      const [pending, sessions] = await Promise.all([
+        apiFetch(`${API_BASE}/pending/`),
+        apiFetch(`${API_BASE}/sessions/live/`)
+      ]);
+      setPendingCount(pending?.length || 0);
+      setSessionCount(sessions?.length || 0);
+    } catch (err) {
+      console.error('Failed to fetch counts:', err);
+    }
+  }, [apiFetch, API_BASE]);
+
+  useEffect(() => {
+    fetchCounts();
+    const interval = setInterval(fetchCounts, 30000); // Update every 30 seconds
+    return () => clearInterval(interval);
+  }, [fetchCounts]);
+
+  // Refresh counts when switching tabs
+  const handleTabChange = (tab) => {
+    setActive(tab);
+    fetchCounts();
+  };
 
   return (
     <div className="flex min-h-screen" style={{ fontFamily: textFont }}>
@@ -109,18 +138,18 @@ export default function Layout() {
             {isSuperuser && (
               <NavItem theme={theme} icon={<LayoutDashboard size={20} />} label="Dashboard" active={active==='Dashboard'} onClick={() => setActive('Dashboard')} />
             )}
-            <NavItem theme={theme} icon={<Clock size={20} />} label="Pending" badge="10" active={active==='Pending'} onClick={() => setActive('Pending')} />
-            <NavItem theme={theme} icon={<Users size={20} />} label="Sessions" badge="8" active={active==='Sessions'} onClick={() => setActive('Sessions')} />
+            <NavItem theme={theme} icon={<Clock size={20} />} label="Pending" badge={pendingCount > 0 ? String(pendingCount) : null} active={active==='Pending'} onClick={() => setActive('Pending')} />
+            <NavItem theme={theme} icon={<Users size={20} />} label="Sessions" badge={sessionCount > 0 ? String(sessionCount) : null} active={active==='Sessions'} onClick={() => setActive('Sessions')} />
             <NavItem theme={theme} icon={<Clock size={20} />} label="Stations" active={active==='Stations'} onClick={() => setActive('Stations')} />
             {isSuperuser && (
-              <NavItem theme={theme} icon={<Trophy size={20} />} label="Leaderboard" active={active==='Leaderboard'} onClick={() => setActive('Leaderboard')} />
+              <NavItem theme={theme} icon={<Trophy size={20} />} label="Leaderboard" active={active==='Leaderboard'} onClick={() => handleTabChange('Leaderboard')} />
             )}
           </nav>
         </div>
 
         <div className="p-4 space-y-3">
           {isSuperuser && (
-            <NavItem theme={theme} icon={<SettingsIcon size={20} />} label="Settings" active={active==='Settings'} onClick={() => setActive('Settings')} />
+            <NavItem theme={theme} icon={<SettingsIcon size={20} />} label="Settings" active={active==='Settings'} onClick={() => handleTabChange('Settings')} />
           )}
           <NavItem theme={theme} icon={<Headphones size={20} />} label="Support" status />
           <NavItem
@@ -146,7 +175,7 @@ export default function Layout() {
       {/* Main Content Area */}
       <main className="flex-1 p-6 overflow-auto" style={{ ...getMainBgStyle(theme) }}>
         {/* Header (breadcrumb + actions) */}
-        <div className="flex items-center justify-between mb-8">
+        <div className="flex items-center justify-between mb-8 hidden">
           <div className="flex items-center gap-3">
             <img src="https://i.pravatar.cc/28" alt="avatar" className="w-7 h-7 rounded-full" />
             <div>

@@ -34,6 +34,7 @@ urlpatterns = [
     path('rfid/stop/', views.rfid_stop_session, name='rfid-stop-session'),
     path('rfid/checkpoint/', views.rfid_checkpoint, name='rfid-checkpoint'),
     path('rfid/status/', views.rfid_status, name='rfid-status'),
+    path('rfid/check-staff/', views.rfid_check_staff, name='rfid-check-staff'),
     path('rfid-test/', views.rfid_test_page, name='rfid-test'),
 
     # Public leaderboard

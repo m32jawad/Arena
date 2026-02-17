@@ -208,7 +208,7 @@ const Settings = () => {
   const [staffError, setStaffError] = useState('');
   const [showStaffModal, setShowStaffModal] = useState(false);
   const [editingStaff, setEditingStaff] = useState(null); // null = add, object = edit
-  const [staffForm, setStaffForm] = useState({ username: '', email: '', first_name: '', last_name: '', password: '', is_staff: true });
+  const [staffForm, setStaffForm] = useState({ username: '', email: '', first_name: '', last_name: '', password: '', is_staff: true, rfid_tag: '' });
 
   const fetchStaff = useCallback(async () => {
     setStaffLoading(true);
@@ -229,13 +229,13 @@ const Settings = () => {
 
   const openAddStaff = () => {
     setEditingStaff(null);
-    setStaffForm({ username: '', email: '', first_name: '', last_name: '', password: '', is_staff: true });
+    setStaffForm({ username: '', email: '', first_name: '', last_name: '', password: '', is_staff: true, rfid_tag: '' });
     setShowStaffModal(true);
   };
 
   const openEditStaff = (user) => {
     setEditingStaff(user);
-    setStaffForm({ username: user.username, email: user.email, first_name: user.first_name, last_name: user.last_name, password: '', is_staff: user.is_staff });
+    setStaffForm({ username: user.username, email: user.email, first_name: user.first_name, last_name: user.last_name, password: '', is_staff: user.is_staff, rfid_tag: user.rfid_tag || '' });
     setShowStaffModal(true);
   };
 
@@ -726,6 +726,11 @@ const Settings = () => {
                         </div>
                         <div className="text-sm mt-0.5" style={{ color: globalTheme.sidebar_text }}>@{s.username}</div>
                         <div className="text-sm mt-1" style={{ color: globalTheme.sidebar_text }}>{s.email || '—'}</div>
+                        {s.rfid_tag && (
+                          <div className="text-xs mt-1 font-mono" style={{ color: globalTheme.sidebar_text }}>
+                            RFID: {s.rfid_tag}
+                          </div>
+                        )}
                         <div className="mt-1 flex items-center gap-2 flex-wrap">
                           {s.is_superuser && <span className="text-xs bg-purple-100 text-purple-700 px-2 py-0.5 rounded-full">Superuser</span>}
                           {s.is_staff && !s.is_superuser && <span className="text-xs bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full">Staff</span>}
@@ -777,6 +782,10 @@ const Settings = () => {
                       <div>
                         <label className="text-xs" style={labelSt}>Email</label>
                         <input type="email" value={staffForm.email} onChange={(e) => setStaffForm({ ...staffForm, email: e.target.value })} className="w-full mt-1 p-2 border rounded text-sm" style={inputSt} />
+                      </div>
+                      <div>
+                        <label className="text-xs" style={labelSt}>RFID Tag</label>
+                        <input value={staffForm.rfid_tag} onChange={(e) => setStaffForm({ ...staffForm, rfid_tag: e.target.value })} className="w-full mt-1 p-2 border rounded text-sm" style={inputSt} placeholder="Optional" />
                       </div>
                       <div>
                         <label className="text-xs" style={labelSt}>{editingStaff ? 'New Password (leave blank to keep)' : 'Password *'}</label>

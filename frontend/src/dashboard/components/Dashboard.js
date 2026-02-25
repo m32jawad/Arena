@@ -3,7 +3,7 @@ import { Search, Trash2, CheckCircle } from 'lucide-react';
 import { useTheme } from '../../context/ThemeContext';
 import { useAuth } from '../../context/AuthContext';
 
-const API_BASE = process.env.REACT_APP_API_BASE || 'http://localhost:8000/api';
+const API_BASE = 'http://localhost:8000/api/auth';
 
 const Dashboard = () => {
   const { theme } = useTheme();

@@ -68,8 +68,32 @@ export function AuthProvider({ children }) {
     setUser(null);
   };
 
+  const apiFetch = async (url, options = {}) => {
+    const getCookie = (name) => {
+      const value = `; ${document.cookie}`;
+      const parts = value.split(`; ${name}=`);
+      if (parts.length === 2) return parts.pop().split(';').shift();
+      return null;
+    };
+
+    const defaultOptions = {
+      credentials: 'include',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-CSRFToken': getCookie('csrftoken') || '',
+        ...(options.headers || {}),
+      },
+    };
+
+    const res = await fetch(url, { ...defaultOptions, ...options });
+    if (!res.ok) {
+      throw new Error(`API request failed: ${res.status}`);
+    }
+    return res.json();
+  };
+
   return (
-    <AuthContext.Provider value={{ user, loading, login, logout }}>
+    <AuthContext.Provider value={{ user, loading, login, logout, apiFetch }}>
       {children}
     </AuthContext.Provider>
   );

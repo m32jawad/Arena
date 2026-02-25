@@ -434,11 +434,12 @@ def controller_test_page(request):
 
 # ── Pending Signup (public create + admin list/approve/reject) ──
 
-def _serialize_pending(p, request=None):
+def _serialize_pending(p, request=None, include_checkpoints=False):
     photo_url = ''
     if p.profile_photo:
         photo_url = request.build_absolute_uri(p.profile_photo.url) if request else p.profile_photo.url
-    return {
+    
+    data = {
         'id': p.id,
         'party_name': p.party_name,
         'email': p.email,
@@ -455,6 +456,24 @@ def _serialize_pending(p, request=None):
         'created_at': p.created_at.isoformat() if p.created_at else '',
         'approved_at': p.approved_at.isoformat() if p.approved_at else '',
     }
+    
+    if include_checkpoints:
+        from .models import Checkpoint
+        checkpoints = Checkpoint.objects.filter(session=p).select_related('controller')
+        data['checkpoints'] = [
+            {
+                'id': cp.id,
+                'controller_id': cp.controller.id,
+                'controller_name': cp.controller.name,
+                'controller_ip': cp.controller.ip_address,
+                'cleared_at': cp.cleared_at.isoformat(),
+                'points_earned': cp.points_earned,
+            }
+            for cp in checkpoints
+        ]
+        data['checkpoints_cleared'] = checkpoints.count()
+    
+    return data
 
 
 @api_view(['POST'])
@@ -533,24 +552,36 @@ def pending_approve(request, pk):
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
 def live_sessions(request):
-    """Return approved sessions that still have time remaining."""
+    """Return approved sessions that still have playtime remaining."""
     from django.utils import timezone
-    from datetime import timedelta
-    now = timezone.now()
-    approved = PendingSignup.objects.filter(status='approved', approved_at__isnull=False)
+    approved = PendingSignup.objects.filter(status='approved')
     live = []
+    
     for p in approved:
-        end_time = p.approved_at + timedelta(minutes=p.session_minutes)
-        if now < end_time:
-            remaining = end_time - now
-            remaining_mins = max(0, int(remaining.total_seconds() // 60))
-            data = _serialize_pending(p, request)
+        remaining_seconds = p.get_remaining_seconds()
+        
+        if remaining_seconds > 0:
+            # Session still has time
+            remaining_mins = max(0, int(remaining_seconds // 60))
+            data = _serialize_pending(p, request, include_checkpoints=True)
             data['remaining_minutes'] = remaining_mins
+            data['elapsed_seconds'] = p.get_elapsed_seconds()
+            data['is_playing'] = p.is_playing
             live.append(data)
         else:
-            # auto-end expired sessions
+            # Auto-end expired sessions
+            if p.is_playing:
+                # Stop the timer first
+                if p.last_started_at:
+                    elapsed = (timezone.now() - p.last_started_at).total_seconds()
+                    p.total_elapsed_seconds += int(elapsed)
+                p.is_playing = False
+                p.last_started_at = None
+            
             p.status = 'ended'
-            p.save(update_fields=['status'])
+            p.ended_at = timezone.now()
+            p.save(update_fields=['status', 'ended_at', 'total_elapsed_seconds', 'is_playing', 'last_started_at'])
+    
     return Response(live)
 
 
@@ -559,21 +590,33 @@ def live_sessions(request):
 def ended_sessions(request):
     """Return ended sessions."""
     from django.utils import timezone
-    from datetime import timedelta
     now = timezone.now()
-    # Also mark any expired approved sessions as ended
-    for p in PendingSignup.objects.filter(status='approved', approved_at__isnull=False):
-        end_time = p.approved_at + timedelta(minutes=p.session_minutes)
-        if now >= end_time:
+    
+    # Check for any approved sessions that have expired
+    for p in PendingSignup.objects.filter(status='approved'):
+        if p.get_remaining_seconds() <= 0:
+            # Stop timer if playing
+            if p.is_playing and p.last_started_at:
+                elapsed = (now - p.last_started_at).total_seconds()
+                p.total_elapsed_seconds += int(elapsed)
+                p.is_playing = False
+                p.last_started_at = None
+            
             p.status = 'ended'
-            p.save(update_fields=['status'])
-    ended = PendingSignup.objects.filter(status='ended').order_by('-approved_at')
+            if not p.ended_at:
+                p.ended_at = now
+            p.save(update_fields=['status', 'ended_at', 'total_elapsed_seconds', 'is_playing', 'last_started_at'])
+    
+    ended = PendingSignup.objects.filter(status='ended').order_by('-ended_at', '-approved_at')
     result = []
+    
     for p in ended:
-        data = _serialize_pending(p, request)
-        if p.approved_at:
-            ended_at = p.approved_at + timedelta(minutes=p.session_minutes)
-            diff = now - ended_at
+        data = _serialize_pending(p, request, include_checkpoints=True)
+        
+        # Calculate how long ago it ended
+        end_time = p.ended_at if p.ended_at else (p.approved_at if p.approved_at else p.created_at)
+        if end_time:
+            diff = now - end_time
             mins = max(0, int(diff.total_seconds() // 60))
             if mins < 60:
                 data['ended_ago'] = f'{mins} min{"s" if mins != 1 else ""} ago'
@@ -585,7 +628,9 @@ def ended_sessions(request):
                 data['ended_ago'] = f'{days} day{"s" if days != 1 else ""} ago'
         else:
             data['ended_ago'] = ''
+        
         result.append(data)
+    
     return Response(result)
 
 
@@ -599,8 +644,19 @@ def end_session(request, pk):
         p = PendingSignup.objects.get(pk=pk)
     except PendingSignup.DoesNotExist:
         return Response({'error': 'Not found.'}, status=status.HTTP_404_NOT_FOUND)
+    
+    from django.utils import timezone
+    
+    # Stop the timer if currently playing
+    if p.is_playing and p.last_started_at:
+        elapsed = (timezone.now() - p.last_started_at).total_seconds()
+        p.total_elapsed_seconds += int(elapsed)
+        p.is_playing = False
+        p.last_started_at = None
+    
     p.status = 'ended'
-    p.save(update_fields=['status'])
+    p.ended_at = timezone.now()
+    p.save(update_fields=['status', 'ended_at', 'total_elapsed_seconds', 'is_playing', 'last_started_at'])
     return Response({'message': 'Session ended.'})
 
 
@@ -629,17 +685,13 @@ def update_session(request, pk):
             elif extra < 0:
                 # Only allow reducing time if allow_reduction is True
                 if gs.allow_reduction:
-                    from django.utils import timezone
-                    from datetime import timedelta
                     # Calculate elapsed time to ensure we don't go below it
-                    if p.approved_at:
-                        elapsed = (timezone.now() - p.approved_at).total_seconds() / 60
-                        min_allowed = max(1, int(elapsed) + 1)  # At least 1 min more than elapsed
-                        new_total = p.session_minutes + extra
-                        p.session_minutes = max(min_allowed, new_total)
-                    else:
-                        # If not started yet, allow any reduction down to 1 minute
-                        p.session_minutes = max(1, p.session_minutes + extra)
+                    elapsed_mins = p.get_elapsed_seconds() // 60
+                    min_allowed = max(1, int(elapsed_mins) + 1)  # At least 1 min more than elapsed
+                    new_total = p.session_minutes + extra
+                    p.session_minutes = max(min_allowed, new_total)
+        except (ValueError, TypeError):
+            pass
         except (ValueError, TypeError):
             pass
     if 'points' in data:
@@ -666,15 +718,132 @@ def pending_reject(request, pk):
     return Response({'message': 'Rejected.'})
 
 
+# ── Checkpoint Management ──
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def add_checkpoint(request, pk):
+    """Manually add/clear a checkpoint for a session.
+    
+    Body: { "controller_id": <id> }
+    Used by staff to manually mark a checkpoint as cleared (e.g., if controller failed to register).
+    """
+    if not request.user.is_superuser:
+        return Response({'error': 'Permission denied.'}, status=status.HTTP_403_FORBIDDEN)
+    
+    try:
+        session = PendingSignup.objects.get(pk=pk)
+    except PendingSignup.DoesNotExist:
+        return Response({'error': 'Session not found.'}, status=status.HTTP_404_NOT_FOUND)
+    
+    controller_id = request.data.get('controller_id')
+    if not controller_id:
+        return Response({'error': 'controller_id is required.'}, status=status.HTTP_400_BAD_REQUEST)
+    
+    try:
+        controller = Controller.objects.get(pk=controller_id)
+    except Controller.DoesNotExist:
+        return Response({'error': 'Controller not found.'}, status=status.HTTP_404_NOT_FOUND)
+    
+    # Create or get the checkpoint
+    checkpoint, created = Checkpoint.objects.get_or_create(
+        session=session,
+        controller=controller
+    )
+    
+    if created:
+        from django.utils import timezone
+        
+        # Calculate points (same logic as rfid_checkpoint)
+        base_points = 10
+        time_bonus = 0
+        
+        if session.started_at:
+            elapsed_seconds = int((timezone.now() - session.started_at).total_seconds())
+            elapsed_minutes = elapsed_seconds / 60.0
+            time_bonus = int(100.0 / (1.0 + elapsed_minutes))
+        elif session.approved_at:
+            elapsed_seconds = int((timezone.now() - session.approved_at).total_seconds())
+            elapsed_minutes = elapsed_seconds / 60.0
+            time_bonus = int(100.0 / (1.0 + elapsed_minutes))
+        
+        points_earned = base_points + time_bonus
+        
+        # Store points in checkpoint
+        checkpoint.points_earned = points_earned
+        checkpoint.save(update_fields=['points_earned'])
+        
+        # Add points to session
+        session.points += points_earned
+        session.save(update_fields=['points'])
+        
+        return Response({
+            'message': 'Checkpoint added.',
+            'checkpoint': {
+                'id': checkpoint.id,
+                'controller_id': controller.id,
+                'controller_name': controller.name,
+                'controller_ip': controller.ip_address,
+                'cleared_at': checkpoint.cleared_at.isoformat(),
+                'points_earned': points_earned,
+            }
+        })
+    else:
+        return Response({
+            'message': 'Checkpoint already exists.',
+            'checkpoint': {
+                'id': checkpoint.id,
+                'controller_id': controller.id,
+                'controller_name': controller.name,
+                'controller_ip': controller.ip_address,
+                'cleared_at': checkpoint.cleared_at.isoformat(),
+                'points_earned': checkpoint.points_earned,
+            }
+        })
+
+
+@api_view(['DELETE'])
+@permission_classes([IsAuthenticated])
+def remove_checkpoint(request, pk, checkpoint_id):
+    """Remove a checkpoint from a session.
+    
+    Used by staff to remove a checkpoint (e.g., if player cheated or checkpoint was incorrectly registered).
+    """
+    if not request.user.is_superuser:
+        return Response({'error': 'Permission denied.'}, status=status.HTTP_403_FORBIDDEN)
+    
+    try:
+        session = PendingSignup.objects.get(pk=pk)
+    except PendingSignup.DoesNotExist:
+        return Response({'error': 'Session not found.'}, status=status.HTTP_404_NOT_FOUND)
+    
+    try:
+        checkpoint = Checkpoint.objects.get(pk=checkpoint_id, session=session)
+    except Checkpoint.DoesNotExist:
+        return Response({'error': 'Checkpoint not found.'}, status=status.HTTP_404_NOT_FOUND)
+    
+    # Subtract the points that were earned for this checkpoint
+    if checkpoint.points_earned > 0:
+        session.points = max(0, session.points - checkpoint.points_earned)
+        session.save(update_fields=['points'])
+    
+    checkpoint.delete()
+    return Response({
+        'message': 'Checkpoint removed.',
+        'points_deducted': checkpoint.points_earned,
+        'new_total': session.points,
+    })
+
+
 # ── RFID Session Start / Stop ──
 
 @api_view(['POST'])
 @permission_classes([AllowAny])
 def rfid_start_session(request):
-    """Start the session timer for a player identified by RFID tag.
+    """Start or resume the session timer for a player identified by RFID tag.
 
     Body: { "rfid": "<tag>" }
-    Sets approved_at = now so the countdown begins.
+    Starts the playtime counter on first call, resumes on subsequent calls.
     """
     rfid = request.data.get('rfid', '').strip()
     if not rfid:
@@ -689,24 +858,44 @@ def rfid_start_session(request):
         )
 
     from django.utils import timezone
-    p.approved_at = timezone.now()
-    p.save(update_fields=['approved_at'])
+    now = timezone.now()
+    
+    # Check if session time has already expired
+    remaining = p.get_remaining_seconds()
+    if remaining <= 0:
+        return Response({
+            'error': 'Session time has expired.',
+            'session_id': p.id,
+            'party_name': p.party_name,
+        }, status=status.HTTP_400_BAD_REQUEST)
+    
+    # If first time starting, set started_at
+    if not p.started_at:
+        p.started_at = now
+    
+    # Set last_started_at to now and mark as playing
+    p.last_started_at = now
+    p.is_playing = True
+    p.save(update_fields=['started_at', 'last_started_at', 'is_playing'])
+    
     return Response({
-        'message': 'Session started.',
+        'message': 'Session started.' if not p.started_at else 'Session resumed.',
         'session_id': p.id,
         'party_name': p.party_name,
         'session_minutes': p.session_minutes,
-        'started_at': p.approved_at.isoformat(),
+        'elapsed_seconds': p.get_elapsed_seconds(),
+        'remaining_seconds': remaining,
+        'started_at': p.last_started_at.isoformat(),
     })
 
 
 @api_view(['POST'])
 @permission_classes([AllowAny])
 def rfid_stop_session(request):
-    """Stop the session timer for a player identified by RFID tag.
+    """Pause the session timer for a player identified by RFID tag.
 
     Body: { "rfid": "<tag>" }
-    Sets status = 'ended'.
+    Pauses the timer by accumulating elapsed time. Session remains 'approved'.
     """
     rfid = request.data.get('rfid', '').strip()
     if not rfid:
@@ -719,13 +908,32 @@ def rfid_stop_session(request):
             {'error': 'No active session found for this RFID tag.'},
             status=status.HTTP_404_NOT_FOUND,
         )
-
-    p.status = 'ended'
-    p.save(update_fields=['status'])
+    
+    if not p.is_playing:
+        return Response({
+            'message': 'Session is already paused.',
+            'session_id': p.id,
+            'party_name': p.party_name,
+        })
+    
+    from django.utils import timezone
+    
+    # Calculate elapsed time for this play period
+    if p.last_started_at:
+        elapsed = (timezone.now() - p.last_started_at).total_seconds()
+        p.total_elapsed_seconds += int(elapsed)
+    
+    # Pause the session
+    p.is_playing = False
+    p.last_started_at = None
+    p.save(update_fields=['total_elapsed_seconds', 'is_playing', 'last_started_at'])
+    
     return Response({
-        'message': 'Session stopped.',
+        'message': 'Session paused.',
         'session_id': p.id,
         'party_name': p.party_name,
+        'elapsed_seconds': p.total_elapsed_seconds,
+        'remaining_seconds': p.get_remaining_seconds(),
     })
 
 
@@ -738,7 +946,16 @@ def rfid_checkpoint(request):
 
     Body: { "rfid": "<tag>", "controller_ip": "<ip>" }
     Creates a Checkpoint row linking the session to the controller.
-    If the checkpoint was already cleared, returns the existing record.
+    Calculates points based on checkpoint clear + time bonus.
+    
+    Scoring System:
+    - Base points: 10 per checkpoint
+    - Time bonus: Up to 100 points based on speed
+      Formula: 100 / (1 + elapsed_minutes)
+      - Cleared in 1 min: ~50 bonus points
+      - Cleared in 2 mins: ~33 bonus points
+      - Cleared in 5 mins: ~16 bonus points
+      - Cleared in 10 mins: ~9 bonus points
     """
     rfid = request.data.get('rfid', '').strip()
     controller_ip = request.data.get('controller_ip', '').strip()
@@ -767,22 +984,59 @@ def rfid_checkpoint(request):
             status=status.HTTP_404_NOT_FOUND,
         )
 
+    from django.utils import timezone
+    
     checkpoint, created = Checkpoint.objects.get_or_create(
         session=p, controller=controller
     )
 
-    # Increment points for the player
+    # Calculate points for the player (only if newly created)
+    points_earned = 0
+    time_bonus = 0
+    elapsed_seconds = 0
+    
     if created:
-        p.points += 1
+        # Base points for clearing checkpoint
+        base_points = 10
+        
+        # Calculate time bonus based on how quickly they cleared it
+        if p.started_at:
+            # Time elapsed from when session actually started playing
+            elapsed_seconds = int((timezone.now() - p.started_at).total_seconds())
+            elapsed_minutes = elapsed_seconds / 60.0
+            
+            # Time bonus: faster = more points
+            # Formula: 100 / (1 + elapsed_minutes)
+            # This gives diminishing returns as time increases
+            time_bonus = int(100.0 / (1.0 + elapsed_minutes))
+        else:
+            # Fallback: use approved_at if started_at is not set
+            if p.approved_at:
+                elapsed_seconds = int((timezone.now() - p.approved_at).total_seconds())
+                elapsed_minutes = elapsed_seconds / 60.0
+                time_bonus = int(100.0 / (1.0 + elapsed_minutes))
+        
+        points_earned = base_points + time_bonus
+        
+        # Store points earned in checkpoint for future reference
+        checkpoint.points_earned = points_earned
+        checkpoint.save(update_fields=['points_earned'])
+        
+        # Add points to session
+        p.points += points_earned
         p.save(update_fields=['points'])
 
     return Response({
-        'message': 'Checkpoint cleared.' if created else 'Checkpoint already cleared.',
+        'message': 'Checkpoint cleared!' if created else 'Checkpoint already cleared.',
         'checkpoint_id': checkpoint.id,
         'session_id': p.id,
         'party_name': p.party_name,
         'controller': controller.name,
         'cleared_at': checkpoint.cleared_at.isoformat(),
+        'points_earned': points_earned if created else 0,
+        'base_points': 10 if created else 0,
+        'time_bonus': time_bonus if created else 0,
+        'elapsed_seconds': elapsed_seconds if created else 0,
         'total_points': p.points,
     }, status=status.HTTP_201_CREATED if created else status.HTTP_200_OK)
 
@@ -811,30 +1065,34 @@ def rfid_status(request):
         )
 
     from django.utils import timezone
-    from datetime import timedelta
     now = timezone.now()
 
     data = _serialize_pending(p, request)
 
-    if p.status == 'approved' and p.approved_at:
-        end_time = p.approved_at + timedelta(minutes=p.session_minutes)
-        if now < end_time:
-            remaining = end_time - now
-            remaining_secs = max(0, int(remaining.total_seconds()))
+    if p.status == 'approved':
+        remaining_secs = p.get_remaining_seconds()
+        
+        if remaining_secs > 0:
             data['session_status'] = 'active'
             data['remaining_seconds'] = remaining_secs
             data['remaining_minutes'] = remaining_secs // 60
-            data['end_time'] = end_time.isoformat()
+            data['elapsed_seconds'] = p.get_elapsed_seconds()
+            data['is_playing'] = p.is_playing
         else:
             # Timer exceeded — auto-end
+            if p.is_playing and p.last_started_at:
+                elapsed = (now - p.last_started_at).total_seconds()
+                p.total_elapsed_seconds += int(elapsed)
+                p.is_playing = False
+                p.last_started_at = None
+            
             p.status = 'ended'
-            p.save(update_fields=['status'])
+            p.ended_at = now
+            p.save(update_fields=['status', 'ended_at', 'total_elapsed_seconds', 'is_playing', 'last_started_at'])
             data['session_status'] = 'expired'
             data['status'] = 'ended'
             data['remaining_seconds'] = 0
             data['remaining_minutes'] = 0
-    elif p.status == 'approved' and not p.approved_at:
-        data['session_status'] = 'approved_not_started'
     elif p.status == 'ended':
         data['session_status'] = 'expired'
         data['remaining_seconds'] = 0
@@ -853,6 +1111,7 @@ def rfid_status(request):
             'controller_name': cp.controller.name,
             'controller_ip': cp.controller.ip_address,
             'cleared_at': cp.cleared_at.isoformat(),
+            'points_earned': cp.points_earned,
         }
         for cp in checkpoints
     ]
@@ -954,10 +1213,10 @@ def public_leaderboard(request):
         # Calculate remaining time for live sessions
         remaining_minutes = 0
         session_status = p.status
-        if p.status == 'approved' and p.approved_at:
-            end_time = p.approved_at + timedelta(minutes=p.session_minutes)
-            if now < end_time:
-                remaining_minutes = max(0, int((end_time - now).total_seconds() // 60))
+        if p.status == 'approved':
+            remaining_seconds = p.get_remaining_seconds()
+            if remaining_seconds > 0:
+                remaining_minutes = remaining_seconds // 60
                 session_status = 'live'
             else:
                 session_status = 'ended'

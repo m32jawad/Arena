@@ -110,12 +110,57 @@ class PendingSignup(models.Model):
     )
     created_at = models.DateTimeField(auto_now_add=True)
     approved_at = models.DateTimeField(null=True, blank=True)
+    
+    # Session timing fields (tracking actual playtime)
+    started_at = models.DateTimeField(
+        null=True, blank=True,
+        help_text='First time the session was started (player began playing)',
+    )
+    last_started_at = models.DateTimeField(
+        null=True, blank=True,
+        help_text='Most recent start/resume time (null when paused)',
+    )
+    total_elapsed_seconds = models.PositiveIntegerField(
+        default=0,
+        help_text='Accumulated playtime in seconds across all start/stop cycles',
+    )
+    is_playing = models.BooleanField(
+        default=False,
+        help_text='True if session is currently active (between start and stop)',
+    )
+    ended_at = models.DateTimeField(
+        null=True, blank=True,
+        help_text='When the session was fully ended',
+    )
 
     class Meta:
         ordering = ['-created_at']
 
     def __str__(self):
         return f'{self.party_name} ({self.status})'
+    
+    def get_elapsed_seconds(self):
+        """Calculate total elapsed playtime in seconds.
+        
+        If currently playing, includes time since last_started_at.
+        Otherwise, returns accumulated total_elapsed_seconds.
+        """
+        from django.utils import timezone
+        
+        elapsed = self.total_elapsed_seconds
+        
+        if self.is_playing and self.last_started_at:
+            # Add current session time
+            current_duration = (timezone.now() - self.last_started_at).total_seconds()
+            elapsed += current_duration
+        
+        return int(elapsed)
+    
+    def get_remaining_seconds(self):
+        """Calculate remaining playtime in seconds based on session_minutes."""
+        total_allowed = self.session_minutes * 60
+        elapsed = self.get_elapsed_seconds()
+        return max(0, total_allowed - elapsed)
 
 
 class Controller(models.Model):
@@ -146,6 +191,10 @@ class Checkpoint(models.Model):
         Controller, on_delete=models.CASCADE, related_name='checkpoints'
     )
     cleared_at = models.DateTimeField(auto_now_add=True)
+    points_earned = models.PositiveIntegerField(
+        default=0,
+        help_text='Total points earned for clearing this checkpoint (base + time bonus)'
+    )
 
     class Meta:
         ordering = ['cleared_at']

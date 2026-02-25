@@ -191,6 +191,65 @@ const Sessions = () => {
     } catch { /* ignore */ }
   };
 
+  /* Toggle checkpoint — add or remove */
+  const handleToggleCheckpoint = async (controllerId) => {
+    if (!editItem) return;
+    
+    const isCleared = editItem.checkpoints?.some(cp => cp.controller_id === controllerId);
+    
+    try {
+      if (isCleared) {
+        // Remove checkpoint
+        const checkpoint = editItem.checkpoints.find(cp => cp.controller_id === controllerId);
+        if (!checkpoint) return;
+        
+        const res = await fetch(`${API_BASE}/sessions/${editItem.id}/checkpoints/${checkpoint.id}/remove/`, {
+          method: 'DELETE',
+          credentials: 'include',
+          headers: { 'X-CSRFToken': getCookie('csrftoken') },
+        });
+        
+        if (res.ok) {
+          // Update local state
+          setEditItem(prev => ({
+            ...prev,
+            checkpoints: prev.checkpoints.filter(cp => cp.id !== checkpoint.id),
+            checkpoints_cleared: (prev.checkpoints_cleared || 0) - 1,
+          }));
+          // Refresh sessions
+          fetchLive();
+          fetchEnded();
+        }
+      } else {
+        // Add checkpoint
+        const res = await fetch(`${API_BASE}/sessions/${editItem.id}/checkpoints/add/`, {
+          method: 'POST',
+          credentials: 'include',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-CSRFToken': getCookie('csrftoken'),
+          },
+          body: JSON.stringify({ controller_id: controllerId }),
+        });
+        
+        if (res.ok) {
+          const data = await res.json();
+          // Update local state
+          setEditItem(prev => ({
+            ...prev,
+            checkpoints: [...(prev.checkpoints || []), data.checkpoint],
+            checkpoints_cleared: (prev.checkpoints_cleared || 0) + 1,
+          }));
+          // Refresh sessions
+          fetchLive();
+          fetchEnded();
+        }
+      }
+    } catch (err) {
+      console.error('Error toggling checkpoint:', err);
+    }
+  };
+
   /* Format approved_at as readable time */
   const formatTime = (isoStr) => {
     if (!isoStr) return '—';
@@ -309,6 +368,8 @@ const Sessions = () => {
                     <div className="text-sm font-medium" style={{ color: theme.sidebar_active_text }}>{session.party_name}</div>
                     <div className="text-xs" style={{ color: theme.sidebar_text }}>
                       {session.storyline_title ? `@${session.storyline_title}` : ''}{session.team_size ? ` · Team of ${session.team_size}` : ''}
+                      {' · '}{session.checkpoints_cleared || 0}/{controllers.length} checkpoints
+                      {' · '}{session.points || 0} pts
                     </div>
                   </div>
                 </div>
@@ -467,20 +528,24 @@ const Sessions = () => {
               {/* Controller circles */}
               <div className="mt-6">
                 <div className="text-xs font-medium mb-2" style={{ color: theme.sidebar_text }}>
-                  Controllers ({controllers.length})
+                  Controllers ({controllers.length}) - Click to toggle checkpoints
                 </div>
                 <div className="flex items-center gap-2 flex-wrap">
-                  {controllers.map((c) => (
-                    <div
-                      key={c.id}
-                      className="w-10 h-10 rounded-full border-2"
-                      style={{
-                        backgroundColor: 'transparent',
-                        borderColor: theme.sidebar_text,
-                      }}
-                      title={c.name}
-                    />
-                  ))}
+                  {controllers.map((c) => {
+                    const isCleared = editItem.checkpoints?.some(cp => cp.controller_id === c.id);
+                    return (
+                      <button
+                        key={c.id}
+                        onClick={() => handleToggleCheckpoint(c.id)}
+                        className="w-10 h-10 rounded-full border-2 cursor-pointer hover:opacity-80 transition-all"
+                        style={{
+                          backgroundColor: isCleared ? primaryColor : 'transparent',
+                          borderColor: isCleared ? primaryColor : theme.sidebar_text,
+                        }}
+                        title={`${c.name} (${isCleared ? 'Cleared' : 'Not cleared'})`}
+                      />
+                    );
+                  })}
                   {controllers.length === 0 && (
                     <span className="text-xs" style={{ color: theme.sidebar_text }}>No controllers</span>
                   )}

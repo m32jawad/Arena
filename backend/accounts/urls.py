@@ -28,6 +28,8 @@ urlpatterns = [
     path('sessions/ended/', views.ended_sessions, name='ended-sessions'),
     path('sessions/<int:pk>/end/', views.end_session, name='end-session'),
     path('sessions/<int:pk>/update/', views.update_session, name='update-session'),
+    path('sessions/<int:pk>/checkpoints/add/', views.add_checkpoint, name='add-checkpoint'),
+    path('sessions/<int:pk>/checkpoints/<int:checkpoint_id>/remove/', views.remove_checkpoint, name='remove-checkpoint'),
 
     # RFID endpoints (hardware / controller facing)
     path('rfid/start/', views.rfid_start_session, name='rfid-start-session'),

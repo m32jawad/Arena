@@ -1,44 +1,108 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Search, ChevronLeft, ChevronRight, Eye, Edit, Slash, ChevronDown } from 'lucide-react';
 import { useTheme } from '../../context/ThemeContext';
+
+const API_BASE = 'http://localhost:8000/api/auth';
 
 const Leaderboard = () => {
   const { theme } = useTheme();
   const headingFont = theme.heading_font || 'inherit';
   const textFont = theme.text_font || 'inherit';
   const primaryColor = theme.primary_color || '#CB30E0';
-  const initialTeams = [
-    { name: 'Team A', username: '@teamA', points: 23000, remaining: '3hr 34 mins', email: 'teamA@example.com', startTime: '2:50 PM', rfid: '2344535', avatar: 'https://i.pravatar.cc/40?img=32' },
-    { name: 'Team B', username: '@teamB', points: 22300, remaining: '5hr 34 mins', email: 'teamB@example.com', startTime: '2:23 PM', rfid: '4674634', avatar: 'https://i.pravatar.cc/40?img=4' },
-    { name: 'Team C', username: '@teamC', points: 13000, remaining: '1hr 34 mins', email: 'teamC@example.com', startTime: '2:12 PM', rfid: '65734536', avatar: 'https://i.pravatar.cc/40?img=12' },
-    { name: 'Lily-Rose Chedjou', username: '@storyline1', points: 4200, remaining: '10 mins', email: 'lilyrose@gmail.com', startTime: '2:50 PM', rfid: '2344535', avatar: 'https://i.pravatar.cc/40?img=32' },
-    { name: 'Caitlyn King', username: '@storyline2', points: 3800, remaining: '14 mins', email: 'hi@caitlynking.com', startTime: '2:23 PM', rfid: '4674634', avatar: 'https://i.pravatar.cc/40?img=4' },
-    { name: 'Fleur Cook', username: '@storyline3', points: 3400, remaining: '16 mins', email: 'fleurcook@icloud.com', startTime: '2:12 PM', rfid: '65734536', avatar: 'https://i.pravatar.cc/40?img=12' },
-  ];
 
-  const [teams, setTeams] = useState(initialTeams);
+  const [teams, setTeams] = useState([]);
+  const [loading, setLoading] = useState(true);
   const [query, setQuery] = useState('');
   const [timeFilter, setTimeFilter] = useState('last7days');
+  const [currentPage, setCurrentPage] = useState(1);
+  const itemsPerPage = 10;
+
+  useEffect(() => {
+    fetchLeaderboard();
+    const interval = setInterval(fetchLeaderboard, 10000); // Refresh every 10s
+    return () => clearInterval(interval);
+  }, []);
+
+  const fetchLeaderboard = async () => {
+    try {
+      const res = await fetch(`${API_BASE}/public/leaderboard/`, { credentials: 'include' });
+      if (res.ok) {
+        const data = await res.json();
+        setTeams(data);
+      }
+    } catch (err) {
+      console.error('Error fetching leaderboard:', err);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const filtered = teams.filter((t) =>
-    (`${t.name} ${t.username} ${t.email}`).toLowerCase().includes(query.toLowerCase())
+    (`${t.name} ${t.email}`).toLowerCase().includes(query.toLowerCase())
   );
 
-  const handleView = (index) => {
-    const t = teams[index];
-    console.log('View', t.name);
+  // Pagination
+  const totalPages = Math.ceil(filtered.length / itemsPerPage);
+  const startIndex = (currentPage - 1) * itemsPerPage;
+  const endIndex = startIndex + itemsPerPage;
+  const paginatedTeams = filtered.slice(startIndex, endIndex);
+
+  const handlePageChange = (page) => {
+    if (page >= 1 && page <= totalPages) {
+      setCurrentPage(page);
+    }
   };
 
-  const handleEdit = (index) => {
-    const t = teams[index];
-    console.log('Edit', t.name);
+  // Reset to page 1 when search query changes
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [query]);
+
+  const handleView = (team) => {
+    console.log('View', team.name);
   };
 
-  const handleBlock = (index) => {
-    setTeams((prev) => prev.filter((_, i) => i !== index));
+  const handleEdit = (team) => {
+    console.log('Edit', team.name);
+  };
+
+  const handleBlock = (id) => {
+    if (window.confirm('Are you sure you want to block this team?')) {
+      // TODO: Implement block API call
+      setTeams((prev) => prev.filter((t) => t.id !== id));
+    }
+  };
+
+  const formatTime = (isoStr) => {
+    if (!isoStr) return '—';
+    const d = new Date(isoStr);
+    let h = d.getHours();
+    const m = String(d.getMinutes()).padStart(2, '0');
+    const ampm = h >= 12 ? 'PM' : 'AM';
+    h = h % 12 || 12;
+    return `${h}:${m} ${ampm}`;
+  };
+
+  const formatRemaining = (mins) => {
+    if (mins >= 60) {
+      const hrs = Math.floor(mins / 60);
+      const remainMins = mins % 60;
+      return `${hrs}hr ${remainMins} mins`;
+    }
+    return `${mins} mins`;
   };
 
   const topThree = teams.slice(0, 3);
+
+  if (loading) {
+    return (
+      <div className="p-6" style={{ fontFamily: textFont }}>
+        <div className="flex justify-center items-center h-64" style={{ color: theme.sidebar_text }}>
+          Loading leaderboard...
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="p-6" style={{ fontFamily: textFont }}>
@@ -52,15 +116,28 @@ const Leaderboard = () => {
 
       <h1 className="text-md font-semibold mb-1" style={{ color: theme.sidebar_active_text, fontFamily: headingFont }}>Top 3 Teams</h1>
       <div className="grid grid-cols-3 gap-4 mb-6">
-        {topThree.map((t, i) => (
-          <div key={i} className="rounded-lg border p-4 flex flex-col justify-between" style={{ backgroundColor: theme.sidebar_bg, borderColor: theme.sidebar_active_bg }}>
+        {topThree.length > 0 ? topThree.map((t, i) => (
+          <div key={t.id} className="rounded-lg border p-4 flex flex-col justify-between" style={{ backgroundColor: theme.sidebar_bg, borderColor: theme.sidebar_active_bg }}>
             <div className="text-sm" style={{ color: theme.sidebar_text }}>{t.name}</div>
             <div className="text-3xl font-bold mt-2" style={{ color: theme.sidebar_active_text, fontFamily: headingFont }}>{t.points} <span className='text-[20px]'>points</span></div>
             <div className="text-xs mt-3 flex items-center justify-end">
-              <span className="px-2 py-1 border border-green-200 text-green-600 rounded" style={{ backgroundColor: theme.sidebar_bg }}>{t.remaining}</span>
+              {t.session_status === 'live' && (
+                <span className="px-2 py-1 border border-green-200 text-green-600 rounded" style={{ backgroundColor: theme.sidebar_bg }}>
+                  {formatRemaining(t.remaining_minutes)}
+                </span>
+              )}
+              {t.session_status === 'ended' && (
+                <span className="px-2 py-1 border border-gray-200 text-gray-600 rounded" style={{ backgroundColor: theme.sidebar_bg }}>
+                  Ended
+                </span>
+              )}
             </div>
           </div>
-        ))}
+        )) : (
+          <div className="col-span-3 text-center py-8" style={{ color: theme.sidebar_text }}>
+            No teams yet
+          </div>
+        )}
       </div>
 
       <div className="rounded-lg border overflow-hidden" style={{ backgroundColor: theme.sidebar_bg, borderColor: theme.sidebar_active_bg }}>
@@ -111,20 +188,30 @@ const Leaderboard = () => {
         </div>
 
         <div>
-          {filtered.length === 0 ? (
-            <div className="p-8 text-center" style={{ color: theme.sidebar_text }}>No teams found</div>
+          {paginatedTeams.length === 0 ? (
+            <div className="p-8 text-center" style={{ color: theme.sidebar_text }}>
+              {loading ? 'Loading...' : 'No teams found'}
+            </div>
           ) : (
-            filtered.map((item, index) => (
-              <div key={index} className="grid grid-cols-12 gap-4 px-6 py-4 border-b items-center" style={{ borderColor: theme.sidebar_active_bg + '66' }}>
+            paginatedTeams.map((item) => (
+              <div key={item.id} className="grid grid-cols-12 gap-4 px-6 py-4 border-b items-center" style={{ borderColor: theme.sidebar_active_bg + '66' }}>
                 <div className="col-span-1 flex items-center">
                   <input type="checkbox" className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500" />
                 </div>
 
                 <div className="col-span-3 flex items-center gap-3">
-                  <img src={item.avatar} alt={item.name} className="w-10 h-10 rounded-full object-cover" />
+                  {item.profile_photo ? (
+                    <img src={item.profile_photo} alt={item.name} className="w-10 h-10 rounded-full object-cover" />
+                  ) : (
+                    <div className="w-10 h-10 rounded-full flex items-center justify-center text-white font-bold" style={{ backgroundColor: primaryColor }}>
+                      {item.name?.charAt(0)?.toUpperCase() || '?'}
+                    </div>
+                  )}
                   <div>
                     <div className="text-sm font-medium" style={{ color: theme.sidebar_active_text }}>{item.name}</div>
-                    <div className="text-xs" style={{ color: theme.sidebar_text }}>{item.username}</div>
+                    <div className="text-xs" style={{ color: theme.sidebar_text }}>
+                      {item.checkpoints_cleared}/{item.total_controllers} checkpoints • {item.points} points
+                    </div>
                   </div>
                 </div>
 
@@ -133,25 +220,27 @@ const Leaderboard = () => {
                 </div>
 
                 <div className="col-span-2">
-                  <div className="text-sm" style={{ color: theme.sidebar_text }}>{item.startTime}</div>
+                  <div className="text-sm" style={{ color: theme.sidebar_text }}>{formatTime(item.approved_at)}</div>
                 </div>
 
                 <div className="col-span-2">
-                  <div className="text-sm" style={{ color: theme.sidebar_text }}>{item.remaining}</div>
+                  <div className="text-sm" style={{ color: theme.sidebar_text }}>
+                    {item.session_status === 'live' ? formatRemaining(item.remaining_minutes) : '—'}
+                  </div>
                 </div>
 
                 <div className="col-span-1">
-                  <div className="text-sm" style={{ color: theme.sidebar_text }}>{item.rfid}</div>
+                  <div className="text-sm" style={{ color: theme.sidebar_text }}>{item.id}</div>
                 </div>
 
                 <div className="col-span-1 flex items-center justify-end gap-2">
-                  <button onClick={() => handleView(index)} title="View" className="p-2 text-gray-400 hover:text-gray-900 hover:bg-gray-50 rounded-full">
+                  <button onClick={() => handleView(item)} title="View" className="p-2 text-gray-400 hover:text-gray-900 hover:bg-gray-50 rounded-full">
                     <Eye size={16} />
                   </button>
-                  <button onClick={() => handleEdit(index)} title="Edit" className="p-2 text-gray-400 hover:text-blue-500 hover:bg-blue-50 rounded-full">
+                  <button onClick={() => handleEdit(item)} title="Edit" className="p-2 text-gray-400 hover:text-blue-500 hover:bg-blue-50 rounded-full">
                     <Edit size={16} />
                   </button>
-                  <button onClick={() => handleBlock(index)} title="Block" className="p-2 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-full">
+                  <button onClick={() => handleBlock(item.id)} title="Block" className="p-2 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-full">
                     <Slash size={16} />
                   </button>
                 </div>
@@ -161,20 +250,77 @@ const Leaderboard = () => {
         </div>
 
         <div className="px-6 py-4 flex items-center justify-between border-t" style={{ borderColor: theme.sidebar_active_bg }}>
-          <button className="flex items-center gap-1 px-3 py-2 text-sm rounded border" style={{ borderColor: theme.sidebar_active_bg, color: theme.sidebar_text }}>
+          <button 
+            onClick={() => handlePageChange(currentPage - 1)}
+            disabled={currentPage === 1}
+            className="flex items-center gap-1 px-3 py-2 text-sm rounded border disabled:opacity-50 disabled:cursor-not-allowed" 
+            style={{ borderColor: theme.sidebar_active_bg, color: theme.sidebar_text }}
+          >
             <ChevronLeft size={16} />
             Previous
           </button>
 
           <div className="flex items-center gap-1">
-            <button className="w-8 h-8 flex items-center justify-center text-sm font-medium text-white rounded" style={{ backgroundColor: primaryColor }}>1</button>
-            <button className="w-8 h-8 flex items-center justify-center text-sm font-medium rounded" style={{ color: theme.sidebar_text }}>2</button>
-            <button className="w-8 h-8 flex items-center justify-center text-sm font-medium rounded" style={{ color: theme.sidebar_text }}>3</button>
-            <span className="px-2" style={{ color: theme.sidebar_text }}>...</span>
-            <button className="w-8 h-8 flex items-center justify-center text-sm font-medium rounded" style={{ color: theme.sidebar_text }}>10</button>
+            {currentPage > 2 && (
+              <>
+                <button 
+                  onClick={() => handlePageChange(1)}
+                  className="w-8 h-8 flex items-center justify-center text-sm font-medium rounded" 
+                  style={{ color: theme.sidebar_text }}
+                >
+                  1
+                </button>
+                {currentPage > 3 && <span className="px-2" style={{ color: theme.sidebar_text }}>...</span>}
+              </>
+            )}
+            
+            {currentPage > 1 && (
+              <button 
+                onClick={() => handlePageChange(currentPage - 1)}
+                className="w-8 h-8 flex items-center justify-center text-sm font-medium rounded" 
+                style={{ color: theme.sidebar_text }}
+              >
+                {currentPage - 1}
+              </button>
+            )}
+            
+            <button 
+              className="w-8 h-8 flex items-center justify-center text-sm font-medium text-white rounded" 
+              style={{ backgroundColor: primaryColor }}
+            >
+              {currentPage}
+            </button>
+            
+            {currentPage < totalPages && (
+              <button 
+                onClick={() => handlePageChange(currentPage + 1)}
+                className="w-8 h-8 flex items-center justify-center text-sm font-medium rounded" 
+                style={{ color: theme.sidebar_text }}
+              >
+                {currentPage + 1}
+              </button>
+            )}
+            
+            {currentPage < totalPages - 1 && (
+              <>
+                {currentPage < totalPages - 2 && <span className="px-2" style={{ color: theme.sidebar_text }}>...</span>}
+                <button 
+                  onClick={() => handlePageChange(totalPages)}
+                  className="w-8 h-8 flex items-center justify-center text-sm font-medium rounded" 
+                  style={{ color: theme.sidebar_text }}
+                >
+                  {totalPages}
+                </button>
+              </>
+            )}
           </div>
 
-          <button className="flex items-center gap-1 px-3 py-2 text-sm rounded border" style={{ borderColor: theme.sidebar_active_bg, color: theme.sidebar_text }}>
+          <button 
+            onClick={() => handlePageChange(currentPage + 1)}
+            disabled={currentPage === totalPages}
+            className="flex items-center gap-1 px-3 py-2 text-sm rounded border disabled:opacity-50 disabled:cursor-not-allowed" 
+            style={{ borderColor: theme.sidebar_active_bg, color: theme.sidebar_text }}
+          >
             Next
             <ChevronRight size={16} />
           </button>

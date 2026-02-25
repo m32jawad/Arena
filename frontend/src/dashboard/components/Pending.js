@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { Search, Trash2, CheckCircle, ChevronLeft, ChevronRight, Minus, Plus } from 'lucide-react';
 import { useTheme } from '../../context/ThemeContext';
 
-const API_BASE = 'http://localhost:8000/api/auth';
+const API_BASE = process.env.REACT_APP_API_BASE || 'http://localhost:8000/api/auth';
 
 /* Pre-built avatars must match signup page */
 const AVATARS = {

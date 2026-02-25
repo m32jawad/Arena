@@ -2,7 +2,7 @@ import React, { createContext, useContext, useState, useEffect } from 'react';
 
 const AuthContext = createContext(null);
 
-const API_BASE = 'http://localhost:8000/api/auth';
+const API_BASE = process.env.REACT_APP_API_BASE || 'http://localhost:8000/api/auth';
 
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(null);
@@ -22,7 +22,7 @@ export function AuthProvider({ children }) {
 
   const login = async (username, password) => {
     // First get CSRF token
-    const csrfRes = await fetch('http://localhost:8000/api/auth/login/', {
+    const csrfRes = await fetch(`${API_BASE}/login/`, {
       method: 'HEAD',
       credentials: 'include',
     }).catch(() => null);

@@ -966,10 +966,11 @@ def rfid_start_session(request):
 @api_view(['POST'])
 @permission_classes([AllowAny])
 def rfid_stop_session(request):
-    """Pause the session timer for a player identified by RFID tag.
+    """Stop and end the session for a player identified by RFID tag.
 
     Body: { "rfid": "<tag>" }
-    Pauses the timer by accumulating elapsed time. Session remains 'approved'.
+    Stops the timer, calculates remaining time, converts it to points,
+    and marks the session as ended.
     """
     rfid = request.data.get('rfid', '').strip()
     if not rfid:
@@ -983,31 +984,36 @@ def rfid_stop_session(request):
             status=status.HTTP_404_NOT_FOUND,
         )
     
-    if not p.is_playing:
-        return Response({
-            'message': 'Session is already paused.',
-            'session_id': p.id,
-            'party_name': p.party_name,
-        })
-    
     from django.utils import timezone
     
-    # Calculate elapsed time for this play period
-    if p.last_started_at:
+    # Stop the timer if currently playing
+    if p.is_playing and p.last_started_at:
         elapsed = (timezone.now() - p.last_started_at).total_seconds()
         p.total_elapsed_seconds += int(elapsed)
+        p.is_playing = False
+        p.last_started_at = None
     
-    # Pause the session
-    p.is_playing = False
-    p.last_started_at = None
-    p.save(update_fields=['total_elapsed_seconds', 'is_playing', 'last_started_at'])
+    # Calculate remaining time and convert to points
+    remaining_seconds = p.get_remaining_seconds()
+    remaining_points = remaining_seconds // 60  # Convert seconds to minutes
+    
+    # Add remaining points to existing points
+    p.points += remaining_points
+    
+    # End the session
+    p.status = 'ended'
+    p.ended_at = timezone.now()
+    
+    p.save(update_fields=['total_elapsed_seconds', 'is_playing', 'last_started_at', 'points', 'status', 'ended_at'])
     
     return Response({
-        'message': 'Session paused.',
+        'message': 'Session ended.',
         'session_id': p.id,
         'party_name': p.party_name,
         'elapsed_seconds': p.total_elapsed_seconds,
-        'remaining_seconds': p.get_remaining_seconds(),
+        'remaining_seconds': remaining_seconds,
+        'remaining_points_added': remaining_points,
+        'total_points': p.points,
     })
 
 

@@ -1,5 +1,6 @@
 from django.contrib.auth import authenticate, login, logout
 from django.contrib.auth.models import User
+from django.views.decorators.csrf import ensure_csrf_cookie
 from rest_framework.decorators import api_view, permission_classes, parser_classes, authentication_classes
 from rest_framework.parsers import MultiPartParser, FormParser
 from rest_framework.permissions import AllowAny, IsAuthenticated
@@ -9,8 +10,17 @@ from rest_framework import status
 from .models import Storyline, GeneralSetting, DashboardTheme, Controller, PendingSignup, Checkpoint, StaffProfile
 
 
+@api_view(['GET'])
+@permission_classes([AllowAny])
+@ensure_csrf_cookie
+def csrf_token(request):
+    # Issue a CSRF cookie without performing any state change
+    return Response({'detail': 'CSRF cookie set'})
+
+
 @api_view(['POST'])
 @permission_classes([AllowAny])
+@ensure_csrf_cookie
 def login_view(request):
     username = request.data.get('username')
     password = request.data.get('password')

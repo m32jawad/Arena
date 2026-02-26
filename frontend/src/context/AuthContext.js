@@ -2,7 +2,9 @@ import React, { createContext, useContext, useState, useEffect } from 'react';
 
 const AuthContext = createContext(null);
 
-const API_BASE = process.env.REACT_APP_API_BASE || 'http://localhost:8000/api/auth';
+// Automatically detect host IP/hostname for the backend API
+const defaultApiBase = `http://${window.location.hostname}:8000/api`;
+const API_BASE = process.env.REACT_APP_API_BASE || defaultApiBase;
 
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(null);
@@ -22,8 +24,8 @@ export function AuthProvider({ children }) {
 
   const login = async (username, password) => {
     // First get CSRF token
-    const csrfRes = await fetch(`${API_BASE}/login/`, {
-      method: 'HEAD',
+    await fetch(`${API_BASE}/csrf/`, {
+      method: 'GET',
       credentials: 'include',
     }).catch(() => null);
 

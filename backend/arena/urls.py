@@ -21,7 +21,9 @@ from django.conf.urls.static import static
 
 urlpatterns = [
     path('admin/', admin.site.urls),
+    # Keep legacy /api/auth/ while also exposing /api/ for current frontend callers
     path('api/auth/', include('accounts.urls')),
+    path('api/', include('accounts.urls')),
 ]
 
 if settings.DEBUG:

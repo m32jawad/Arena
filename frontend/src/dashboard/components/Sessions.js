@@ -2,7 +2,8 @@ import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { Search, ChevronDown, MoreVertical, Clock, Pencil, Minus, Plus } from 'lucide-react';
 import { useTheme } from '../../context/ThemeContext';
 
-const API_BASE = process.env.REACT_APP_API_BASE || 'http://localhost:8000/api/auth';
+const defaultApiBase = `http://${window.location.hostname}:8000/api/auth`;
+const API_BASE = process.env.REACT_APP_API_BASE || defaultApiBase;
 
 /* Pre-built avatars (must match signup page) */
 const AVATARS = {

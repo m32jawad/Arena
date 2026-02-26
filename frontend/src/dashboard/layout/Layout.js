@@ -86,7 +86,9 @@ export default function Layout() {
   const textFont = theme.text_font || 'inherit';
   const primaryColor = theme.primary_color || '#CB30E0';
 
-  const API_BASE = process.env.REACT_APP_API_BASE || 'http://localhost:8000/api';
+  // Automatically detect host IP/hostname for the backend API
+  const defaultApiBase = `http://${window.location.hostname}:8000/api`;
+  const API_BASE = process.env.REACT_APP_API_BASE || defaultApiBase;
 
   const fetchCounts = useCallback(async () => {
     try {

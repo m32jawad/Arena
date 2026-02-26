@@ -1,6 +1,8 @@
 import React, { useState, useEffect, useRef, useCallback } from "react";
 
-const API_BASE = process.env.REACT_APP_API_BASE || "http://localhost:8000/api/auth";
+// Automatically detect host IP/hostname for the backend API
+const defaultApiBase = `http://${window.location.hostname}:8000/api`;
+const API_BASE = process.env.REACT_APP_API_BASE || defaultApiBase;
 
 /* ─── Pre-built avatar collection ─── */
 const AVATARS = [

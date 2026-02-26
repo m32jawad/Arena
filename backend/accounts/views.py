@@ -7,7 +7,7 @@ from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework import status
 
-from .models import Storyline, GeneralSetting, DashboardTheme, Controller, PendingSignup, Checkpoint, StaffProfile
+from .models import Storyline, GeneralSetting, DashboardTheme, AppTheme, Controller, PendingSignup, Checkpoint, StaffProfile
 
 
 @api_view(['GET'])
@@ -355,6 +355,70 @@ def dashboard_theme_view(request):
 
     theme.save()
     return Response(_serialize_theme(theme, request))
+
+
+# ── App Theme (Signup Page) ──
+
+def _serialize_app_theme(t, request=None):
+    image_url = ''
+    if t.background_image:
+        image_url = request.build_absolute_uri(t.background_image.url) if request else t.background_image.url
+    
+    video_url = ''
+    if t.background_video:
+        video_url = request.build_absolute_uri(t.background_video.url) if request else t.background_video.url
+    
+    return {
+        'background_type': t.background_type,
+        'background_value': t.background_value,
+        'background_image': image_url,
+        'background_video': video_url,
+        'font_family': t.font_family,
+        'font_color': t.font_color,
+        'button_color': t.button_color,
+        'button_text_color': t.button_text_color,
+    }
+
+
+@api_view(['GET', 'PUT'])
+@permission_classes([AllowAny])
+@parser_classes([MultiPartParser, FormParser])
+def app_theme_view(request):
+    theme = AppTheme.load()
+
+    if request.method == 'GET':
+        return Response(_serialize_app_theme(theme, request))
+
+    # PUT — only superusers may update
+    if not request.user or not request.user.is_superuser:
+        return Response({'error': 'Permission denied.'}, status=status.HTTP_403_FORBIDDEN)
+
+    data = request.data
+    theme.background_type = data.get('background_type', theme.background_type)
+    theme.background_value = data.get('background_value', theme.background_value)
+    theme.font_family = data.get('font_family', theme.font_family)
+    theme.font_color = data.get('font_color', theme.font_color)
+    theme.button_color = data.get('button_color', theme.button_color)
+    theme.button_text_color = data.get('button_text_color', theme.button_text_color)
+
+    # Handle image upload
+    image = request.FILES.get('background_image')
+    if image:
+        theme.background_image = image
+    # Allow clearing the image when switching away from image type
+    if data.get('clear_background_image') == 'true':
+        theme.background_image = None
+
+    # Handle video upload
+    video = request.FILES.get('background_video')
+    if video:
+        theme.background_video = video
+    # Allow clearing the video when switching away from video type
+    if data.get('clear_background_video') == 'true':
+        theme.background_video = None
+
+    theme.save()
+    return Response(_serialize_app_theme(theme, request))
 
 
 # ── Controller CRUD ──

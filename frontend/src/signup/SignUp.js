@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from "react";
+import { useAppTheme } from "../context/AppThemeContext";
 
 // Automatically detect host IP/hostname for the backend API
 const defaultApiBase = `http://${window.location.hostname}:8000/api`;
@@ -30,30 +31,69 @@ const AvatarSVG = ({ bg, skin, hair, size = 64 }) => (
   </svg>
 );
 
-const VideoBg = () => (
-  <>
-    <video
-      autoPlay
-      loop
-      muted
-      playsInline
-      className="fixed inset-0 w-full h-full object-cover"
-      style={{ zIndex: -1 }}
-    >
-      <source src="/bgvideo.mp4" type="video/mp4" />
-    </video>
+const ThemedVideoBg = ({ appTheme }) => {
+  if (appTheme.background_type === 'video' && appTheme.background_video) {
+    return (
+      <>
+        <video
+          autoPlay
+          loop
+          muted
+          playsInline
+          className="fixed inset-0 w-full h-full object-cover"
+          style={{ zIndex: -1 }}
+        >
+          <source src={appTheme.background_video} type="video/mp4" />
+        </video>
+        <div
+          className="fixed inset-0"
+          style={{ zIndex: -1, background: "rgba(10, 5, 20, 0.5)" }}
+        />
+      </>
+    );
+  }
+
+  if (appTheme.background_type === 'image' && appTheme.background_image) {
+    return (
+      <div
+        className="fixed inset-0"
+        style={{
+          zIndex: -1,
+          backgroundImage: `url(${appTheme.background_image})`,
+          backgroundSize: 'cover',
+          backgroundPosition: 'center',
+        }}
+      />
+    );
+  }
+
+  if (appTheme.background_type === 'gradient') {
+    return (
+      <div
+        className="fixed inset-0"
+        style={{
+          zIndex: -1,
+          background: appTheme.background_value,
+        }}
+      />
+    );
+  }
+
+  // Default: solid color
+  return (
     <div
       className="fixed inset-0"
-      style={{ zIndex: -1, background: "rgba(10, 5, 20, 0.5)" }}
+      style={{
+        zIndex: -1,
+        background: appTheme.background_value,
+      }}
     />
-  </>
-);
-const btnStyle = {
-  background: "linear-gradient(135deg,#9b30ff 0%,#a83279 100%)",
+  );
 };
-const fieldStyle = { background: "rgba(255,255,255,0.06)", appearance: "none" };
 
 export default function SignUp() {
+  const { appTheme } = useAppTheme();
+
   const [step, setStep] = useState(1);
   const [partyName, setPartyName] = useState("");
   const [email, setEmail] = useState("");
@@ -77,6 +117,20 @@ export default function SignUp() {
   const videoRef = useRef(null);
   const canvasRef = useRef(null);
   const streamRef = useRef(null);
+
+  // Dynamic button style based on theme
+  const btnStyle = {
+    background: appTheme.button_color,
+    color: appTheme.button_text_color,
+  };
+
+  // Dynamic field style with theme colors
+  const fieldStyle = {
+    background: "rgba(255,255,255,0.06)",
+    appearance: "none",
+    color: appTheme.font_color,
+    fontFamily: appTheme.font_family ? `${appTheme.font_family}, sans-serif` : 'inherit',
+  };
 
   /* Open camera */
   const openCamera = useCallback(async () => {
@@ -220,8 +274,8 @@ export default function SignUp() {
     /* Success screen after signup */
     if (signupDone) {
       return (
-        <div className="min-h-screen flex items-center justify-center px-5 py-8">
-          <VideoBg />
+        <div className="min-h-screen flex items-center justify-center px-5 py-8" style={{ fontFamily: appTheme.font_family ? `${appTheme.font_family}, sans-serif` : 'inherit' }}>
+          <ThemedVideoBg appTheme={appTheme} />
           <div className="w-full max-w-[400px] flex flex-col items-center text-center">
             <img src="/logo.png" alt="Unreal Place" className="w-40 mb-6 cursor-pointer" onClick={() => { setSignupDone(false); setStep(1); }} />
             <div className="w-20 h-20 rounded-full bg-green-500/20 flex items-center justify-center mb-4">
@@ -229,8 +283,8 @@ export default function SignUp() {
                 <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
               </svg>
             </div>
-            <h2 className="text-white text-2xl font-bold mb-2">Request Submitted!</h2>
-            <p className="text-white/60 text-sm">Your signup is pending approval. You'll be notified once approved.</p>
+            <h2 className="text-2xl font-bold mb-2" style={{ color: appTheme.font_color }}>Request Submitted!</h2>
+            <p style={{ color: `${appTheme.font_color}99` }} className="text-sm">Your signup is pending approval. You'll be notified once approved.</p>
           </div>
         </div>
       );
@@ -281,8 +335,8 @@ export default function SignUp() {
     ];
 
     return (
-      <div className="min-h-screen flex items-center justify-center px-5 py-8">
-        <VideoBg />
+      <div className="min-h-screen flex items-center justify-center px-5 py-8" style={{ fontFamily: appTheme.font_family ? `${appTheme.font_family}, sans-serif` : 'inherit' }}>
+        <ThemedVideoBg appTheme={appTheme} />
         <div className="w-full max-w-[440px] flex flex-col items-center">
           <img src="/logo.png" alt="Unreal Place" className="w-40 mb-6 cursor-pointer" onClick={() => { closeCamera(); setStep(1); }} />
 
@@ -296,21 +350,22 @@ export default function SignUp() {
                   autoPlay
                   playsInline
                   muted
-                  className="w-60 h-60 rounded-2xl object-cover border-4 border-purple-500"
-                  style={{ transform: "scaleX(-1)" }}
+                  className="w-60 h-60 rounded-2xl object-cover border-4"
+                  style={{ transform: "scaleX(-1)", borderColor: appTheme.button_color }}
                 />
                 <canvas ref={canvasRef} className="hidden" />
                 <div className="flex gap-3 mt-4">
                   <button
                     onClick={capturePhoto}
-                    className="px-6 py-2.5 rounded-xl text-white text-sm font-semibold border-none cursor-pointer transition hover:opacity-90"
+                    className="px-6 py-2.5 rounded-xl text-sm font-semibold border-none cursor-pointer transition hover:opacity-90"
                     style={btnStyle}
                   >
                     Capture
                   </button>
                   <button
                     onClick={closeCamera}
-                    className="px-6 py-2.5 rounded-xl text-white/70 text-sm font-semibold border border-white/20 bg-transparent cursor-pointer hover:text-white transition"
+                    className="px-6 py-2.5 rounded-xl text-sm font-semibold border bg-transparent cursor-pointer hover:opacity-60 transition"
+                    style={{ borderColor: appTheme.font_color, color: appTheme.font_color }}
                   >
                     Cancel
                   </button>
@@ -322,11 +377,13 @@ export default function SignUp() {
                 <img
                   src={groupPhoto}
                   alt="Group photo"
-                  className="w-48 h-48 rounded-2xl object-cover border-4 border-green-500"
+                  className="w-48 h-48 rounded-2xl object-cover border-4"
+                  style={{ borderColor: '#22c55e' }}
                 />
                 <button
                   onClick={openCamera}
-                  className="mt-3 px-4 py-2 rounded-lg text-white/80 text-xs border border-white/20 bg-transparent cursor-pointer hover:text-white transition"
+                  className="mt-3 px-4 py-2 rounded-lg text-xs border bg-transparent cursor-pointer hover:opacity-60 transition"
+                  style={{ borderColor: appTheme.font_color, color: appTheme.font_color }}
                 >
                   Retake
                 </button>
@@ -335,24 +392,27 @@ export default function SignUp() {
               /* Camera button */
               <button
                 onClick={openCamera}
-                className="w-full flex flex-col items-center justify-center py-6 rounded-2xl bg-white/5 border-2 border-dashed border-white/20 cursor-pointer hover:border-purple-400 hover:bg-white/10 transition"
+                className="w-full flex flex-col items-center justify-center py-6 rounded-2xl bg-white/5 border-2 border-dashed cursor-pointer hover:bg-white/10 transition"
+                style={{
+                  borderColor: appTheme.button_color,
+                }}
               >
                 <div className="w-16 h-16 rounded-full bg-white/10 flex items-center justify-center mb-2">
-                  <svg xmlns="http://www.w3.org/2000/svg" className="w-8 h-8 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+                  <svg xmlns="http://www.w3.org/2000/svg" className="w-8 h-8" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5} style={{ color: appTheme.font_color }}>
                     <path strokeLinecap="round" strokeLinejoin="round" d="M6.827 6.175A2.31 2.31 0 0 1 5.186 7.23c-.38.054-.757.112-1.134.175C2.999 7.58 2.25 8.507 2.25 9.574V18a2.25 2.25 0 0 0 2.25 2.25h15A2.25 2.25 0 0 0 21.75 18V9.574c0-1.067-.75-1.994-1.802-2.169a47.865 47.865 0 0 0-1.134-.175 2.31 2.31 0 0 1-1.64-1.055l-.822-1.316a2.192 2.192 0 0 0-1.736-1.039 48.774 48.774 0 0 0-5.232 0 2.192 2.192 0 0 0-1.736 1.039l-.821 1.316Z" />
                     <path strokeLinecap="round" strokeLinejoin="round" d="M16.5 12.75a4.5 4.5 0 1 1-9 0 4.5 4.5 0 0 1 9 0Z" />
                   </svg>
                 </div>
-                <span className="text-white text-base font-semibold">Realistic Group Photo</span>
+                <span className="text-base font-semibold" style={{ color: appTheme.font_color }}>Realistic Group Photo</span>
               </button>
             )}
           </div>
 
           {/* OR divider */}
           <div className="flex items-center w-full my-5">
-            <div className="flex-1 h-px bg-white/20"></div>
-            <span className="px-4 text-white/60 text-sm font-semibold tracking-wider">OR</span>
-            <div className="flex-1 h-px bg-white/20"></div>
+            <div className="flex-1 h-px" style={{ background: appTheme.font_color + '33' }}></div>
+            <span className="px-4 text-sm font-semibold tracking-wider" style={{ color: appTheme.font_color + '99' }}>OR</span>
+            <div className="flex-1 h-px" style={{ background: appTheme.font_color + '33' }}></div>
           </div>
 
           {/* Groups Grid */}
@@ -364,14 +424,14 @@ export default function SignUp() {
                   setSelectedGroup(group.id);
                   setGroupPhoto(null);
                 }}
-                className={`flex flex-col items-center py-6 px-4 rounded-2xl bg-white/5 border-3 cursor-pointer transition hover:bg-white/10 ${
-                  selectedGroup === group.id ? "border-4" : "border-2"
-                }`}
+                className={`flex flex-col items-center py-6 px-4 rounded-2xl bg-white/5 cursor-pointer transition hover:bg-white/10`}
                 style={{
+                  borderWidth: selectedGroup === group.id ? '4px' : '2px',
                   borderColor: selectedGroup === group.id ? group.borderColor : "rgba(255,255,255,0.1)",
+                  borderStyle: 'solid',
                 }}
               >
-                <span className="text-white text-sm font-semibold mb-3">{group.name}</span>
+                <span className="text-sm font-semibold mb-3" style={{ color: appTheme.font_color }}>{group.name}</span>
                 <div className="relative flex items-center justify-center" style={{ width: "120px", height: "50px" }}>
                   {group.avatars.map((avatar, idx) => (
                     <div
@@ -397,7 +457,7 @@ export default function SignUp() {
 
           {/* Signup button */}
           <button
-            className="w-full py-4 rounded-2xl text-white text-lg font-semibold cursor-pointer border-none transition hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed"
+            className="w-full py-4 rounded-2xl text-lg font-semibold cursor-pointer border-none transition hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed"
             style={btnStyle}
             disabled={submitting || (!groupPhoto && !selectedGroup)}
             onClick={handleSignup}
@@ -406,9 +466,9 @@ export default function SignUp() {
           </button>
 
           {/* Terms */}
-          <p className="text-white/60 text-xs mt-4 text-center">
-            * By Clicking <span className="font-bold text-white">Signup</span> I Accept{" "}
-            <span className="text-pink-400 cursor-pointer">Terms and Conditions</span>
+          <p className="text-xs mt-4 text-center" style={{ color: `${appTheme.font_color}99` }}>
+            * By Clicking <span className="font-bold" style={{ color: appTheme.font_color }}>Signup</span> I Accept{" "}
+            <span style={{ color: appTheme.button_color }} className="cursor-pointer">Terms and Conditions</span>
           </p>
         </div>
       </div>
@@ -420,15 +480,17 @@ export default function SignUp() {
     return (
       <div
         className="min-h-screen flex items-center justify-center px-5 py-8"
+        style={{ fontFamily: appTheme.font_family ? `${appTheme.font_family}, sans-serif` : 'inherit' }}
       >
-        <VideoBg />
+        <ThemedVideoBg appTheme={appTheme} />
         <div className="w-full max-w-[400px] flex flex-col items-center">
         <img src="/logo.png" alt="Unreal Place" className="w-40 mb-2 cursor-pointer" onClick={() => setStep(1)} />
 
           {/* Back button */}
           <button
             onClick={() => setStep(1)}
-            className="self-start flex items-center gap-1.5 text-white/70 text-sm bg-transparent border-none cursor-pointer hover:text-white transition mb-2 -mt-1"
+            className="self-start flex items-center gap-1.5 text-sm bg-transparent border-none cursor-pointer hover:opacity-60 transition mb-2 -mt-1"
+            style={{ color: `${appTheme.font_color}b3` }}
           >
             <svg xmlns="http://www.w3.org/2000/svg" className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
               <path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7" />
@@ -436,7 +498,7 @@ export default function SignUp() {
             Back
           </button>
 
-          <h1 className="text-white text-3xl font-bold my-3 mb-6 text-center">
+          <h1 className="text-3xl font-bold my-3 mb-6 text-center" style={{ color: appTheme.font_color }}>
             Select Storyline
           </h1>
 
@@ -447,7 +509,7 @@ export default function SignUp() {
               maxHeight: storylines.length > 2 ? "320px" : "auto",
               overflowY: storylines.length > 2 ? "auto" : "visible",
               scrollbarWidth: "thin",
-              scrollbarColor: "#9b30ff transparent",
+              scrollbarColor: appTheme.button_color + " transparent",
               paddingRight: storylines.length > 2 ? "8px" : "0",
             }}
           >
@@ -455,8 +517,12 @@ export default function SignUp() {
               {storylines.map((s) => (
                 <div
                   key={s.id}
-                  className={`flex items-stretch rounded-xl border overflow-hidden cursor-pointer transition ${selectedStoryline === s.id ? "border-purple-500" : "border-white/10"}`}
-                  style={{ background: "rgba(255,255,255,0.06)" }}
+                  className={`flex items-stretch rounded-xl border overflow-hidden cursor-pointer transition`}
+                  style={{
+                    background: "rgba(255,255,255,0.06)",
+                    borderColor: selectedStoryline === s.id ? appTheme.button_color : "rgba(255,255,255,0.1)",
+                    borderWidth: '1px',
+                  }}
                   onClick={() => setSelectedStoryline(s.id)}
                 >
                   {s.image && (
@@ -467,15 +533,16 @@ export default function SignUp() {
                     />
                   )}
                   <div className="p-3.5 flex flex-col gap-1.5">
-                    <h3 className="text-white text-lg font-bold m-0">
+                    <h3 className="text-lg font-bold m-0" style={{ color: appTheme.font_color }}>
                       {s.title}
                     </h3>
-                    <p className="text-white/70 text-[13px] leading-snug m-0 line-clamp-4">
+                    <p className="text-[13px] leading-snug m-0 line-clamp-4" style={{ color: `${appTheme.font_color}b3` }}>
                       {s.text}
                     </p>
                     {s.text && s.text.length > 100 && (
                       <button
-                        className="bg-transparent border-none text-purple-400 text-xs cursor-pointer p-0 mt-1 text-left hover:underline"
+                        className="bg-transparent border-none text-xs cursor-pointer p-0 mt-1 text-left hover:underline"
+                        style={{ color: appTheme.button_color }}
                         onClick={(e) => {
                           e.stopPropagation();
                           setViewingStory(s);
@@ -491,7 +558,7 @@ export default function SignUp() {
           </div>
 
           <button
-            className="w-full py-4 rounded-2xl text-white text-lg font-semibold cursor-pointer border-none transition hover:opacity-90"
+            className="w-full py-4 rounded-2xl text-lg font-semibold cursor-pointer border-none transition hover:opacity-90"
             style={btnStyle}
             onClick={() => setStep(3)}
           >
@@ -511,12 +578,13 @@ export default function SignUp() {
               onClick={(e) => e.stopPropagation()}
             >
               <button
-                className="absolute top-3 right-4 bg-transparent border-none text-white text-2xl cursor-pointer"
+                className="absolute top-3 right-4 bg-transparent border-none text-2xl cursor-pointer"
+                style={{ color: appTheme.font_color }}
                 onClick={() => setViewingStory(null)}
               >
                 &times;
               </button>
-              <h2 className="text-white text-xl font-bold mb-3">
+              <h2 className="text-xl font-bold mb-3" style={{ color: appTheme.font_color }}>
                 {viewingStory.title}
               </h2>
               {viewingStory.image && (
@@ -526,7 +594,7 @@ export default function SignUp() {
                   className="w-full max-h-48 object-cover rounded-lg mb-4"
                 />
               )}
-              <p className="text-white/80 text-sm leading-relaxed whitespace-pre-wrap m-0">
+              <p className="text-sm leading-relaxed whitespace-pre-wrap m-0" style={{ color: `${appTheme.font_color}cc` }}>
                 {viewingStory.text}
               </p>
             </div>
@@ -540,12 +608,13 @@ export default function SignUp() {
   return (
     <div
       className="min-h-screen flex items-center justify-center px-5 py-8"
+      style={{ fontFamily: appTheme.font_family ? `${appTheme.font_family}, sans-serif` : 'inherit' }}
     >
-      <VideoBg />
+      <ThemedVideoBg appTheme={appTheme} />
       <div className="w-full max-w-[400px] flex flex-col items-center">
         <img src="/logo.png" alt="Unreal Place" className="w-40 mb-2 cursor-pointer" onClick={() => setStep(1)} />
 
-        <h1 className="text-white text-3xl font-bold my-3 mb-8 text-center">
+        <h1 className="text-3xl font-bold my-3 mb-8 text-center" style={{ color: appTheme.font_color }}>
           Sign Up
         </h1>
 
@@ -561,8 +630,11 @@ export default function SignUp() {
             placeholder="Party Name"
             value={partyName}
             onChange={(e) => setPartyName(e.target.value)}
-            className="w-full py-[18px] px-5 rounded-xl border border-white/10 text-white text-base outline-none placeholder-white/60 box-border"
-            style={fieldStyle}
+            className="w-full py-[18px] px-5 rounded-xl border border-white/10 text-base outline-none placeholder-opacity-60 box-border"
+            style={{
+              ...fieldStyle,
+              placeholderColor: `${appTheme.font_color}99`,
+            }}
           />
 
           <input
@@ -570,14 +642,17 @@ export default function SignUp() {
             placeholder="Email"
             value={email}
             onChange={(e) => setEmail(e.target.value)}
-            className="w-full py-[18px] px-5 rounded-xl border border-white/10 text-white text-base outline-none placeholder-white/60 box-border"
-            style={fieldStyle}
+            className="w-full py-[18px] px-5 rounded-xl border border-white/10 text-base outline-none placeholder-opacity-60 box-border"
+            style={{
+              ...fieldStyle,
+              placeholderColor: `${appTheme.font_color}99`,
+            }}
           />
 
           <select
             value={teamSize}
             onChange={(e) => setTeamSize(e.target.value)}
-            className="w-full py-[18px] px-5 rounded-xl border border-white/10 text-white text-base outline-none cursor-pointer box-border"
+            className="w-full py-[18px] px-5 rounded-xl border border-white/10 text-base outline-none cursor-pointer box-border"
             style={{
               ...fieldStyle,
               backgroundImage:
@@ -605,16 +680,21 @@ export default function SignUp() {
                 onChange={(e) => setReceiveOffers(e.target.checked)}
                 className="peer opacity-0 w-0 h-0"
               />
-              <span className="absolute inset-0 cursor-pointer rounded-full bg-white/15 transition-all peer-checked:bg-purple-600 before:content-[''] before:absolute before:h-5 before:w-5 before:left-[3px] before:bottom-[3px] before:bg-[#aaa] before:rounded-full before:transition-all peer-checked:before:translate-x-[22px] peer-checked:before:bg-white"></span>
+              <span 
+                className="absolute inset-0 cursor-pointer rounded-full bg-white/15 transition-all peer-checked:bg-purple-600 before:content-[''] before:absolute before:h-5 before:w-5 before:left-[3px] before:bottom-[3px] before:bg-[#aaa] before:rounded-full before:transition-all peer-checked:before:translate-x-[22px] peer-checked:before:bg-white"
+                style={{
+                  backgroundColor: receiveOffers ? appTheme.button_color : 'rgba(255,255,255,0.15)',
+                }}
+              ></span>
             </label>
-            <span className="text-white text-base font-medium">
+            <span className="text-base font-medium" style={{ color: appTheme.font_color }}>
               Receive Offers
             </span>
           </div>
 
           <button
             type="submit"
-            className="w-full py-4 rounded-2xl text-white text-lg font-semibold cursor-pointer mt-1 border-none transition hover:opacity-90"
+            className="w-full py-4 rounded-2xl text-lg font-semibold cursor-pointer mt-1 border-none transition hover:opacity-90"
             style={btnStyle}
           >
             Next

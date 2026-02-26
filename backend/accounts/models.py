@@ -69,6 +69,47 @@ class DashboardTheme(models.Model):
         return obj
 
 
+class AppTheme(models.Model):
+    """Singleton model for the App/Signup page theme."""
+    BACKGROUND_TYPES = [
+        ('solid', 'Solid Color'),
+        ('gradient', 'Gradient'),
+        ('image', 'Image'),
+        ('video', 'Video'),
+    ]
+    background_type = models.CharField(max_length=10, choices=BACKGROUND_TYPES, default='solid')
+    background_value = models.CharField(
+        max_length=500, blank=True, default='#1a1a2e',
+        help_text='Hex color, CSS gradient, or leave blank when using image/video',
+    )
+    background_image = models.ImageField(upload_to='themes/app/', blank=True, null=True)
+    background_video = models.FileField(
+        upload_to='themes/app/', blank=True, null=True,
+        help_text='Video file for background (MP4, WebM, etc.)',
+    )
+    font_family = models.CharField(max_length=100, blank=True, default='')
+    font_color = models.CharField(max_length=20, blank=True, default='#FFFFFF')
+    button_color = models.CharField(max_length=20, blank=True, default='#CB30E0')
+    button_text_color = models.CharField(max_length=20, blank=True, default='#FFFFFF')
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = 'App Theme'
+        verbose_name_plural = 'App Themes'
+
+    def __str__(self):
+        return 'App Theme'
+
+    def save(self, *args, **kwargs):
+        self.pk = 1
+        super().save(*args, **kwargs)
+
+    @classmethod
+    def load(cls):
+        obj, _ = cls.objects.get_or_create(pk=1)
+        return obj
+
+
 class Storyline(models.Model):
     title = models.CharField(max_length=255)
     text = models.TextField(blank=True, default='')

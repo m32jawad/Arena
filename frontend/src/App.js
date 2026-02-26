@@ -2,6 +2,7 @@ import React from 'react';
 import { BrowserRouter, Routes, Route } from 'react-router-dom';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { ThemeProvider } from './context/ThemeContext';
+import { AppThemeProvider } from './context/AppThemeContext';
 import Layout from './dashboard/layout/Layout';
 import Login from './dashboard/components/Login';
 import SignUp from './signup/SignUp';
@@ -28,12 +29,14 @@ export default function App() {
     <BrowserRouter>
       <AuthProvider>
         <ThemeProvider>
-          <Routes>
-            <Route path="/signup" element={<SignUp />} />
-            <Route path="/leaderboard" element={<LeaderboardPage />} />
-            <Route path="/leaderboard2" element={<LeaderboardPage2 />} />
-            <Route path="*" element={<AppContent />} />
-          </Routes>
+          <AppThemeProvider>
+            <Routes>
+              <Route path="/signup" element={<SignUp />} />
+              <Route path="/leaderboard" element={<LeaderboardPage />} />
+              <Route path="/leaderboard2" element={<LeaderboardPage2 />} />
+              <Route path="*" element={<AppContent />} />
+            </Routes>
+          </AppThemeProvider>
         </ThemeProvider>
       </AuthProvider>
     </BrowserRouter>

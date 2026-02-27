@@ -1264,12 +1264,15 @@ def rfid_test_page(request):
 @api_view(['GET'])
 @permission_classes([AllowAny])
 def station_recent_scans(request):
-    """Get the last N sessions that scanned / cleared a checkpoint at a controller.
+    """Get the last N sessions that played at this station, ordered by most recent activity.
 
     Query params:
-        controller_id: <int>  (required)
+        controller_id: <int>  (required – used to identify the station)
         limit:         <int>  (default 3)
-    Returns controller info + list of recent sessions.
+
+    Returns the most recently active/ended sessions globally so the list
+    always reflects who played last, regardless of whether they cleared
+    a checkpoint at this specific controller.
     """
     controller_id = request.query_params.get('controller_id')
     limit = int(request.query_params.get('limit', 3))
@@ -1282,25 +1285,47 @@ def station_recent_scans(request):
     except Controller.DoesNotExist:
         return Response({'error': 'Controller not found.'}, status=status.HTTP_404_NOT_FOUND)
 
-    checkpoints = (
-        Checkpoint.objects
-        .filter(controller=controller)
-        .select_related('session')
-        .order_by('-cleared_at')[:limit]
+    from django.db.models import Q
+    from django.utils import timezone
+
+    # Fetch the most recently started/ended sessions (approved or ended),
+    # ordered by the most recent activity timestamp.
+    sessions = (
+        PendingSignup.objects
+        .filter(
+            Q(status='ended') | Q(status='approved'),
+            last_started_at__isnull=False,
+        )
+        .order_by('-last_started_at')[:limit * 4]   # over-fetch to ensure we get enough after dedup
     )
 
+    # If no last_started_at, fall back to ended_at or approved_at ordering
+    if not sessions.exists():
+        sessions = (
+            PendingSignup.objects
+            .filter(Q(status='ended') | Q(status='approved'))
+            .order_by('-ended_at', '-approved_at')[:limit * 4]
+        )
+
     recent = []
-    for cp in checkpoints:
-        p = cp.session
+    seen_ids = set()
+    for p in sessions:
+        if p.id in seen_ids:
+            continue
+        seen_ids.add(p.id)
+        activity_time = p.last_started_at or p.ended_at or p.approved_at
         recent.append({
             'session_id': p.id,
             'party_name': p.party_name,
             'team_size': p.team_size,
             'points': p.points,
             'avatar_id': p.avatar_id,
-            'cleared_at': cp.cleared_at.isoformat(),
-            'points_earned': cp.points_earned,
+            'profile_photo': request.build_absolute_uri(p.profile_photo.url) if p.profile_photo else '',
+            'played_at': activity_time.isoformat() if activity_time else '',
+            'points_earned': p.points,
         })
+        if len(recent) >= limit:
+            break
 
     return Response({
         'controller_id': controller.id,

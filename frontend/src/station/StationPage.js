@@ -24,6 +24,40 @@ function formatTime(secs) {
   return `${String(m).padStart(2, '0')}:${String(r).padStart(2, '0')}`;
 }
 
+const AVATARS = {
+  "avatar-1": { bg: "#6C3483", skin: "#F39C12", hair: "#2C3E50" },
+  "avatar-2": { bg: "#1ABC9C", skin: "#E74C3C", hair: "#F1C40F" },
+  "avatar-3": { bg: "#2980B9", skin: "#E67E22", hair: "#8E44AD" },
+  "avatar-4": { bg: "#E74C3C", skin: "#3498DB", hair: "#2ECC71" },
+  "avatar-5": { bg: "#8E44AD", skin: "#1ABC9C", hair: "#F39C12" },
+  "avatar-6": { bg: "#F39C12", skin: "#9B59B6", hair: "#E74C3C" },
+  "avatar-7": { bg: "#2ECC71", skin: "#E74C3C", hair: "#3498DB" },
+  "avatar-8": { bg: "#3498DB", skin: "#F1C40F", hair: "#E74C3C" },
+};
+
+const RecentAvatar = ({ scan }) => {
+  const size = 28;
+  if (scan.profile_photo) {
+    return <img src={scan.profile_photo} alt="" style={{ width: size, height: size, borderRadius: '50%', objectFit: 'cover', flexShrink: 0 }} />;
+  }
+  const av = AVATARS[scan.avatar_id];
+  if (av) {
+    return (
+      <svg viewBox="0 0 80 80" width={size} height={size} style={{ flexShrink: 0 }}>
+        <rect width="80" height="80" rx="40" fill={av.bg} />
+        <ellipse cx="40" cy="34" rx="13" ry="14" fill={av.skin} />
+        <ellipse cx="40" cy="70" rx="22" ry="20" fill={av.skin} />
+        <ellipse cx="40" cy="24" rx="14" ry="10" fill={av.hair} />
+      </svg>
+    );
+  }
+  return (
+    <div style={{ width: size, height: size, borderRadius: '50%', backgroundColor: '#7c3aed', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontSize: 12, fontWeight: 700, flexShrink: 0 }}>
+      {scan.party_name?.charAt(0)?.toUpperCase() || '?'}
+    </div>
+  );
+};
+
 // ─────────────────────────────────────────────
 export default function StationPage() {
   const [searchParams] = useSearchParams();
@@ -291,8 +325,9 @@ export default function StationPage() {
               {recentScans.map((scan, i) => (
                 <div key={i} style={{ ...styles.recentRow, ...(i < recentScans.length - 1 ? styles.recentRowBorder : {}) }}>
                   <span style={styles.recentRank}>#{i + 1}</span>
+                  <RecentAvatar scan={scan} />
                   <span style={styles.recentName}>{scan.party_name}</span>
-                  <span style={styles.recentPts}>+{scan.points_earned} pts</span>
+                  <span style={styles.recentPts}>{scan.points} pts</span>
                 </div>
               ))}
             </div>

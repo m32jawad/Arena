@@ -113,6 +113,10 @@ class AppTheme(models.Model):
 class Storyline(models.Model):
     title = models.CharField(max_length=255)
     text = models.TextField(blank=True, default='')
+    hint = models.TextField(
+        blank=True, default='',
+        help_text='In-game hint shown to players during an active session at the station',
+    )
     image = models.ImageField(upload_to='storylines/', blank=True, null=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)

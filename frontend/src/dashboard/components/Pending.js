@@ -73,6 +73,10 @@ const Pending = () => {
   const [defaultSessionLength, setDefaultSessionLength] = useState(10);
   const [sessionPresetStep, setSessionPresetStep] = useState(5);
 
+  /* Pagination */
+  const [currentPage, setCurrentPage] = useState(1);
+  const itemsPerPage = 10;
+
   /* Approval modal state */
   const [modalItem, setModalItem] = useState(null);
   const [modalRfid, setModalRfid] = useState('');
@@ -175,6 +179,16 @@ const Pending = () => {
     (`${p.party_name} ${p.storyline_title} ${p.email}`).toLowerCase().includes(query.toLowerCase())
   );
 
+  const totalPages = Math.max(1, Math.ceil(filtered.length / itemsPerPage));
+  const paginatedItems = filtered.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage);
+
+  /* Reset to page 1 when search changes */
+  useEffect(() => { setCurrentPage(1); }, [query]);
+
+  const handlePageChange = (page) => {
+    if (page >= 1 && page <= totalPages) setCurrentPage(page);
+  };
+
   /* Time ago helper */
   const timeAgo = (isoStr) => {
     if (!isoStr) return '';
@@ -231,7 +245,7 @@ const Pending = () => {
           ) : filtered.length === 0 ? (
             <div className="p-8 text-center" style={{ color: theme.sidebar_text }}>No pending approvals</div>
           ) : (
-            filtered.map((item) => (
+            paginatedItems.map((item) => (
               <div key={item.id} className="grid grid-cols-12 gap-4 px-6 py-4 border-b" style={{ borderColor: theme.sidebar_active_bg + '66' }}>
                 <div className="col-span-1 flex items-center">
                   <input 
@@ -293,28 +307,44 @@ const Pending = () => {
 
         {/* Pagination */}
         <div className="px-6 py-4 flex items-center justify-between border-t" style={{ borderColor: theme.sidebar_active_bg }}>
-          <button className="flex items-center gap-1 px-3 py-2 text-sm rounded border" style={{ borderColor: theme.sidebar_active_bg, color: theme.sidebar_text }}>
+          <button
+            onClick={() => handlePageChange(currentPage - 1)}
+            disabled={currentPage === 1}
+            className="flex items-center gap-1 px-3 py-2 text-sm rounded border disabled:opacity-50 disabled:cursor-not-allowed"
+            style={{ borderColor: theme.sidebar_active_bg, color: theme.sidebar_text }}
+          >
             <ChevronLeft size={16} />
             Previous
           </button>
-          
+
           <div className="flex items-center gap-1">
-            <button className="w-8 h-8 flex items-center justify-center text-sm font-medium text-white rounded" style={{ backgroundColor: primaryColor }}>
-              1
-            </button>
-            <button className="w-8 h-8 flex items-center justify-center text-sm font-medium rounded" style={{ color: theme.sidebar_text }}>
-              2
-            </button>
-            <button className="w-8 h-8 flex items-center justify-center text-sm font-medium rounded" style={{ color: theme.sidebar_text }}>
-              3
-            </button>
-            <span className="px-2" style={{ color: theme.sidebar_text }}>...</span>
-            <button className="w-8 h-8 flex items-center justify-center text-sm font-medium rounded" style={{ color: theme.sidebar_text }}>
-              10
-            </button>
+            {currentPage > 2 && (
+              <>
+                <button onClick={() => handlePageChange(1)} className="w-8 h-8 flex items-center justify-center text-sm font-medium rounded" style={{ color: theme.sidebar_text }}>1</button>
+                {currentPage > 3 && <span className="px-2" style={{ color: theme.sidebar_text }}>...</span>}
+              </>
+            )}
+            {currentPage > 1 && (
+              <button onClick={() => handlePageChange(currentPage - 1)} className="w-8 h-8 flex items-center justify-center text-sm font-medium rounded" style={{ color: theme.sidebar_text }}>{currentPage - 1}</button>
+            )}
+            <button className="w-8 h-8 flex items-center justify-center text-sm font-medium text-white rounded" style={{ backgroundColor: primaryColor }}>{currentPage}</button>
+            {currentPage < totalPages && (
+              <button onClick={() => handlePageChange(currentPage + 1)} className="w-8 h-8 flex items-center justify-center text-sm font-medium rounded" style={{ color: theme.sidebar_text }}>{currentPage + 1}</button>
+            )}
+            {currentPage < totalPages - 1 && (
+              <>
+                {currentPage < totalPages - 2 && <span className="px-2" style={{ color: theme.sidebar_text }}>...</span>}
+                <button onClick={() => handlePageChange(totalPages)} className="w-8 h-8 flex items-center justify-center text-sm font-medium rounded" style={{ color: theme.sidebar_text }}>{totalPages}</button>
+              </>
+            )}
           </div>
-          
-          <button className="flex items-center gap-1 px-3 py-2 text-sm rounded border" style={{ borderColor: theme.sidebar_active_bg, color: theme.sidebar_text }}>
+
+          <button
+            onClick={() => handlePageChange(currentPage + 1)}
+            disabled={currentPage === totalPages}
+            className="flex items-center gap-1 px-3 py-2 text-sm rounded border disabled:opacity-50 disabled:cursor-not-allowed"
+            style={{ borderColor: theme.sidebar_active_bg, color: theme.sidebar_text }}
+          >
             Next
             <ChevronRight size={16} />
           </button>

@@ -235,6 +235,7 @@ def _serialize_storyline(s, request=None):
         'id': s.id,
         'title': s.title,
         'text': s.text,
+        'hint': s.hint,
         'image': image_url,
     }
 
@@ -260,12 +261,13 @@ def storyline_list_create(request):
     # POST
     title = request.data.get('title', '').strip()
     text = request.data.get('text', '').strip()
+    hint = request.data.get('hint', '').strip()
     image = request.FILES.get('image')
 
     if not title:
         return Response({'error': 'Title is required.'}, status=status.HTTP_400_BAD_REQUEST)
 
-    storyline = Storyline.objects.create(title=title, text=text, image=image)
+    storyline = Storyline.objects.create(title=title, text=text, hint=hint, image=image)
     return Response(_serialize_storyline(storyline, request), status=status.HTTP_201_CREATED)
 
 
@@ -291,6 +293,9 @@ def storyline_detail(request, pk):
         text = request.data.get('text')
         if text is not None:
             storyline.text = text.strip()
+        hint = request.data.get('hint')
+        if hint is not None:
+            storyline.hint = hint.strip()
         image = request.FILES.get('image')
         if image:
             storyline.image = image
@@ -521,6 +526,7 @@ def _serialize_pending(p, request=None, include_checkpoints=False):
         'receive_offers': p.receive_offers,
         'storyline': p.storyline_id,
         'storyline_title': p.storyline.title if p.storyline else '',
+        'storyline_hint': p.storyline.hint if p.storyline else '',
         'profile_photo': photo_url,
         'avatar_id': p.avatar_id,
         'rfid_tag': p.rfid_tag,
@@ -960,6 +966,8 @@ def rfid_start_session(request):
         'elapsed_seconds': p.get_elapsed_seconds(),
         'remaining_seconds': remaining,
         'started_at': p.last_started_at.isoformat(),
+        'storyline_title': p.storyline.title if p.storyline else '',
+        'storyline_hint': p.storyline.hint if p.storyline else '',
     })
 
 
@@ -1251,6 +1259,54 @@ def rfid_test_page(request):
     """Serve the RFID API test page."""
     from django.shortcuts import render
     return render(request, 'rfid_test.html')
+
+
+@api_view(['GET'])
+@permission_classes([AllowAny])
+def station_recent_scans(request):
+    """Get the last N sessions that scanned / cleared a checkpoint at a controller.
+
+    Query params:
+        controller_id: <int>  (required)
+        limit:         <int>  (default 3)
+    Returns controller info + list of recent sessions.
+    """
+    controller_id = request.query_params.get('controller_id')
+    limit = int(request.query_params.get('limit', 3))
+
+    if not controller_id:
+        return Response({'error': 'controller_id is required.'}, status=status.HTTP_400_BAD_REQUEST)
+
+    try:
+        controller = Controller.objects.get(pk=controller_id)
+    except Controller.DoesNotExist:
+        return Response({'error': 'Controller not found.'}, status=status.HTTP_404_NOT_FOUND)
+
+    checkpoints = (
+        Checkpoint.objects
+        .filter(controller=controller)
+        .select_related('session')
+        .order_by('-cleared_at')[:limit]
+    )
+
+    recent = []
+    for cp in checkpoints:
+        p = cp.session
+        recent.append({
+            'session_id': p.id,
+            'party_name': p.party_name,
+            'team_size': p.team_size,
+            'points': p.points,
+            'avatar_id': p.avatar_id,
+            'cleared_at': cp.cleared_at.isoformat(),
+            'points_earned': cp.points_earned,
+        })
+
+    return Response({
+        'controller_id': controller.id,
+        'controller_name': controller.name,
+        'recent_scans': recent,
+    })
 
 
 # ── Public Leaderboard ──

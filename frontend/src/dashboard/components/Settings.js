@@ -396,7 +396,7 @@ const Settings = () => {
   const [storiesError, setStoriesError] = useState('');
   const [showStoryModal, setShowStoryModal] = useState(false);
   const [editingStory, setEditingStory] = useState(null);
-  const [storyForm, setStoryForm] = useState({ title: '', text: '', image: null });
+  const [storyForm, setStoryForm] = useState({ title: '', text: '', hint: '', image: null });
   const [storyImagePreview, setStoryImagePreview] = useState('');
   const [viewingStory, setViewingStory] = useState(null);
 
@@ -419,14 +419,14 @@ const Settings = () => {
 
   const openAddStory = () => {
     setEditingStory(null);
-    setStoryForm({ title: '', text: '', image: null });
+    setStoryForm({ title: '', text: '', hint: '', image: null });
     setStoryImagePreview('');
     setShowStoryModal(true);
   };
 
   const openEditStory = (story) => {
     setEditingStory(story);
-    setStoryForm({ title: story.title, text: story.text, image: null });
+    setStoryForm({ title: story.title, text: story.text, hint: story.hint || '', image: null });
     setStoryImagePreview(story.image || '');
     setShowStoryModal(true);
   };
@@ -446,6 +446,7 @@ const Settings = () => {
       const formData = new FormData();
       formData.append('title', storyForm.title);
       formData.append('text', storyForm.text);
+      formData.append('hint', storyForm.hint || '');
       if (storyForm.image) formData.append('image', storyForm.image);
 
       const url = editingStory ? `${API_BASE}/storylines/${editingStory.id}/` : `${API_BASE}/storylines/`;
@@ -1169,6 +1170,12 @@ const Settings = () => {
                       <img src={viewingStory.image} alt={viewingStory.title} className="w-full max-h-48 object-cover rounded-lg mb-4" />
                     )}
                     <p className="text-sm whitespace-pre-wrap leading-relaxed" style={labelSt}>{viewingStory.text}</p>
+                    {viewingStory.hint && (
+                      <div className="mt-4 p-3 rounded-lg border" style={{ borderColor: globalTheme.sidebar_active_bg, backgroundColor: globalTheme.sidebar_active_bg + '55' }}>
+                        <div className="text-xs font-semibold mb-1" style={{ color: globalTheme.primary_color || '#CB30E0' }}>IN-GAME HINT</div>
+                        <p className="text-sm whitespace-pre-wrap leading-relaxed" style={labelSt}>{viewingStory.hint}</p>
+                      </div>
+                    )}
                   </div>
                 </div>
               )}
@@ -1176,7 +1183,7 @@ const Settings = () => {
               {/* Add / Edit Story Modal */}
               {showStoryModal && (
                 <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
-                  <div className="rounded-xl shadow-xl w-full max-w-md p-6 relative" style={modalSt}>
+                  <div className="rounded-xl shadow-xl w-full max-w-md p-6 relative overflow-y-auto max-h-[90vh]" style={modalSt}>
                     <button onClick={() => setShowStoryModal(false)} className="absolute top-4 right-4" style={{ color: globalTheme.sidebar_text }}>
                       <X size={20} />
                     </button>
@@ -1187,11 +1194,15 @@ const Settings = () => {
                         <input required value={storyForm.title} onChange={(e) => setStoryForm({ ...storyForm, title: e.target.value })} className="w-full mt-1 p-2 border rounded text-sm" style={inputSt} />
                       </div>
                       <div>
-                        <label className="text-xs" style={labelSt}>Paragraph</label>
+                        <label className="text-xs font-semibold" style={labelSt}>Paragraph</label>
                         <textarea rows={4} value={storyForm.text} onChange={(e) => setStoryForm({ ...storyForm, text: e.target.value })} className="w-full mt-1 p-2 border rounded text-sm resize-none" style={inputSt} />
                       </div>
                       <div>
-                        <label className="text-xs" style={labelSt}>Image</label>
+                        <label className="text-xs font-semibold" style={{ ...labelSt, color: globalTheme.primary_color || '#CB30E0' }}>💡 In-Game Hint</label>
+                        <textarea rows={3} value={storyForm.hint || ''} onChange={(e) => setStoryForm({ ...storyForm, hint: e.target.value })} placeholder="Hint shown to players during their active session at the station…" className="w-full mt-1 p-2 border-2 rounded text-sm resize-none" style={{ ...inputSt, borderColor: globalTheme.primary_color || '#CB30E0' }} />
+                      </div>
+                      <div>
+                        <label className="text-xs font-semibold" style={labelSt}>Image</label>
                         <input type="file" accept="image/*" onChange={handleStoryImageChange} className="w-full mt-1 text-sm" />
                         {storyImagePreview && (
                           <img src={storyImagePreview} alt="Preview" className="mt-2 w-24 h-24 object-cover rounded border" style={{ borderColor: globalTheme.sidebar_active_bg }} />

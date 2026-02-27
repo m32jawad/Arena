@@ -2,6 +2,7 @@ import React from 'react';
 import { BrowserRouter, Routes, Route } from 'react-router-dom';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { ThemeProvider } from './context/ThemeContext';
+import { AppThemeProvider } from './context/AppThemeContext';
 import Layout from './dashboard/layout/Layout';
 import Login from './dashboard/components/Login';
 import SignUp from './signup/SignUp';
@@ -29,6 +30,7 @@ export default function App() {
     <BrowserRouter>
       <AuthProvider>
         <ThemeProvider>
+<<<<<<< HEAD
           <Routes>
             <Route path="/signup" element={<SignUp />} />
             <Route path="/leaderboard" element={<LeaderboardPage />} />
@@ -36,6 +38,16 @@ export default function App() {
             <Route path="/station" element={<StationPage />} />
             <Route path="*" element={<AppContent />} />
           </Routes>
+=======
+          <AppThemeProvider>
+            <Routes>
+              <Route path="/signup" element={<SignUp />} />
+              <Route path="/leaderboard" element={<LeaderboardPage />} />
+              <Route path="/leaderboard2" element={<LeaderboardPage2 />} />
+              <Route path="*" element={<AppContent />} />
+            </Routes>
+          </AppThemeProvider>
+>>>>>>> 329b475a6efc6d975774ba7c24a271a0d761ea4f
         </ThemeProvider>
       </AuthProvider>
     </BrowserRouter>

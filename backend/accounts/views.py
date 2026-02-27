@@ -7,7 +7,7 @@ from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework import status
 
-from .models import Storyline, GeneralSetting, DashboardTheme, Controller, PendingSignup, Checkpoint, StaffProfile
+from .models import Storyline, GeneralSetting, DashboardTheme, AppTheme, Controller, PendingSignup, Checkpoint, StaffProfile
 
 
 @api_view(['GET'])
@@ -355,6 +355,70 @@ def dashboard_theme_view(request):
 
     theme.save()
     return Response(_serialize_theme(theme, request))
+
+
+# ── App Theme (Signup Page) ──
+
+def _serialize_app_theme(t, request=None):
+    image_url = ''
+    if t.background_image:
+        image_url = request.build_absolute_uri(t.background_image.url) if request else t.background_image.url
+    
+    video_url = ''
+    if t.background_video:
+        video_url = request.build_absolute_uri(t.background_video.url) if request else t.background_video.url
+    
+    return {
+        'background_type': t.background_type,
+        'background_value': t.background_value,
+        'background_image': image_url,
+        'background_video': video_url,
+        'font_family': t.font_family,
+        'font_color': t.font_color,
+        'button_color': t.button_color,
+        'button_text_color': t.button_text_color,
+    }
+
+
+@api_view(['GET', 'PUT'])
+@permission_classes([AllowAny])
+@parser_classes([MultiPartParser, FormParser])
+def app_theme_view(request):
+    theme = AppTheme.load()
+
+    if request.method == 'GET':
+        return Response(_serialize_app_theme(theme, request))
+
+    # PUT — only superusers may update
+    if not request.user or not request.user.is_superuser:
+        return Response({'error': 'Permission denied.'}, status=status.HTTP_403_FORBIDDEN)
+
+    data = request.data
+    theme.background_type = data.get('background_type', theme.background_type)
+    theme.background_value = data.get('background_value', theme.background_value)
+    theme.font_family = data.get('font_family', theme.font_family)
+    theme.font_color = data.get('font_color', theme.font_color)
+    theme.button_color = data.get('button_color', theme.button_color)
+    theme.button_text_color = data.get('button_text_color', theme.button_text_color)
+
+    # Handle image upload
+    image = request.FILES.get('background_image')
+    if image:
+        theme.background_image = image
+    # Allow clearing the image when switching away from image type
+    if data.get('clear_background_image') == 'true':
+        theme.background_image = None
+
+    # Handle video upload
+    video = request.FILES.get('background_video')
+    if video:
+        theme.background_video = video
+    # Allow clearing the video when switching away from video type
+    if data.get('clear_background_video') == 'true':
+        theme.background_video = None
+
+    theme.save()
+    return Response(_serialize_app_theme(theme, request))
 
 
 # ── Controller CRUD ──
@@ -902,10 +966,11 @@ def rfid_start_session(request):
 @api_view(['POST'])
 @permission_classes([AllowAny])
 def rfid_stop_session(request):
-    """Pause the session timer for a player identified by RFID tag.
+    """Stop and end the session for a player identified by RFID tag.
 
     Body: { "rfid": "<tag>" }
-    Pauses the timer by accumulating elapsed time. Session remains 'approved'.
+    Stops the timer, calculates remaining time, converts it to points,
+    and marks the session as ended.
     """
     rfid = request.data.get('rfid', '').strip()
     if not rfid:
@@ -919,31 +984,36 @@ def rfid_stop_session(request):
             status=status.HTTP_404_NOT_FOUND,
         )
     
-    if not p.is_playing:
-        return Response({
-            'message': 'Session is already paused.',
-            'session_id': p.id,
-            'party_name': p.party_name,
-        })
-    
     from django.utils import timezone
     
-    # Calculate elapsed time for this play period
-    if p.last_started_at:
+    # Stop the timer if currently playing
+    if p.is_playing and p.last_started_at:
         elapsed = (timezone.now() - p.last_started_at).total_seconds()
         p.total_elapsed_seconds += int(elapsed)
+        p.is_playing = False
+        p.last_started_at = None
     
-    # Pause the session
-    p.is_playing = False
-    p.last_started_at = None
-    p.save(update_fields=['total_elapsed_seconds', 'is_playing', 'last_started_at'])
+    # Calculate remaining time and convert to points
+    remaining_seconds = p.get_remaining_seconds()
+    remaining_points = remaining_seconds // 60  # Convert seconds to minutes
+    
+    # Add remaining points to existing points
+    p.points += remaining_points
+    
+    # End the session
+    p.status = 'ended'
+    p.ended_at = timezone.now()
+    
+    p.save(update_fields=['total_elapsed_seconds', 'is_playing', 'last_started_at', 'points', 'status', 'ended_at'])
     
     return Response({
-        'message': 'Session paused.',
+        'message': 'Session ended.',
         'session_id': p.id,
         'party_name': p.party_name,
         'elapsed_seconds': p.total_elapsed_seconds,
-        'remaining_seconds': p.get_remaining_seconds(),
+        'remaining_seconds': remaining_seconds,
+        'remaining_points_added': remaining_points,
+        'total_points': p.points,
     })
 
 

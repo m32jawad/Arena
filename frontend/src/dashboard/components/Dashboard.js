@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { Search, Trash2, CheckCircle } from 'lucide-react';
+import { Search, Trash2, CheckCircle, Minus, Plus } from 'lucide-react';
 import { useTheme } from '../../context/ThemeContext';
 import { useAuth } from '../../context/AuthContext';
 
@@ -19,17 +19,35 @@ const Dashboard = () => {
   const [query, setQuery] = useState("");
   const [sessionQuery, setSessionQuery] = useState("");
 
+  /* Approval modal state */
+  const [modalItem, setModalItem] = useState(null);
+  const [modalRfid, setModalRfid] = useState('');
+  const [modalMinutes, setModalMinutes] = useState(10);
+
+  /* General settings (session_length & session_presets) */
+  const [defaultSessionLength, setDefaultSessionLength] = useState(10);
+  const [sessionPresetStep, setSessionPresetStep] = useState(5);
+
   const fetchData = useCallback(async () => {
     setLoading(true);
     try {
-      const [pending, sessions, ctrlData] = await Promise.all([
+      const [pending, sessions, ctrlData, settings] = await Promise.all([
         apiFetch(`${API_BASE}/pending/`),
         apiFetch(`${API_BASE}/sessions/live/`),
-        apiFetch(`${API_BASE}/controllers/`)
+        apiFetch(`${API_BASE}/controllers/`),
+        apiFetch(`${API_BASE}/general-settings/`)
       ]);
       setPendingApprovals(pending || []);
       setLiveSessions(sessions || []);
       setControllers(ctrlData || []);
+      
+      // Update default session length from settings
+      if (settings) {
+        const len = parseInt(settings.session_length, 10);
+        const preset = parseInt(settings.session_presets, 10);
+        if (!isNaN(len) && len > 0) setDefaultSessionLength(len);
+        if (!isNaN(preset) && preset > 0) setSessionPresetStep(preset);
+      }
     } catch (err) {
       console.error('Failed to fetch dashboard data:', err);
     } finally {
@@ -52,13 +70,43 @@ const Dashboard = () => {
     }
   };
 
-  const handleApprove = async (id) => {
+  /* Open approval modal — default time from general settings */
+  const handleApprove = (item) => {
+    setModalItem(item);
+    setModalRfid(item.rfid_tag || '');
+    setModalMinutes(defaultSessionLength);
+  };
+
+  /* Submit approval with RFID and time */
+  const submitApprove = async () => {
+    if (!modalItem) return;
     try {
-      await apiFetch(`${API_BASE}/pending/${id}/approve/`, { method: 'POST' });
-      fetchData();
+      const res = await fetch(`${API_BASE}/pending/${modalItem.id}/approve/`, {
+        method: 'POST',
+        credentials: 'include',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-CSRFToken': getCookie('csrftoken'),
+        },
+        body: JSON.stringify({
+          rfid_tag: modalRfid,
+          session_minutes: modalMinutes,
+        }),
+      });
+      if (res.ok) {
+        setPendingApprovals((prev) => prev.filter((p) => p.id !== modalItem.id));
+        setModalItem(null);
+      }
     } catch (err) {
       console.error('Failed to approve:', err);
     }
+  };
+
+  /* Decline from modal */
+  const handleDeclineFromModal = async () => {
+    if (!modalItem) return;
+    await handleDelete(modalItem.id);
+    setModalItem(null);
   };
 
   const getTimeAgo = (dateString) => {
@@ -158,7 +206,7 @@ const Dashboard = () => {
                         <button title="Reject" onClick={() => handleDelete(item.id)} className="p-2 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-full">
                           <Trash2 size={14} />
                         </button>
-                        <button title="Approve" onClick={() => handleApprove(item.id)} className="p-2 text-gray-400 hover:text-green-500 hover:bg-green-50 rounded-full">
+                        <button title="Approve" onClick={() => handleApprove(item)} className="p-2 text-gray-400 hover:text-green-500 hover:bg-green-50 rounded-full">
                           <CheckCircle size={14} />
                         </button>
                       </div>
@@ -245,8 +293,135 @@ const Dashboard = () => {
         </div>
 
       </div>
+
+      {/* ─── Approval Modal ─── */}
+      {modalItem && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/40"
+          onClick={() => setModalItem(null)}
+        >
+          <div
+            className="rounded-2xl shadow-2xl w-full max-w-[480px] mx-4 overflow-hidden"
+            style={{ backgroundColor: theme.sidebar_bg }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Header */}
+            <div className="px-6 pt-5 pb-4 border-b" style={{ borderColor: theme.sidebar_active_bg }}>
+              <h2 className="text-lg font-semibold m-0" style={{ color: theme.sidebar_active_text, fontFamily: headingFont }}>
+                Approve & Assign RFID
+              </h2>
+            </div>
+
+            {/* Body */}
+            <div className="px-6 py-6">
+              <div className="flex items-start gap-5">
+                {/* Profile photo — left side */}
+                <div className="flex-shrink-0">
+                  {modalItem.profile_photo ? (
+                    <img
+                      src={modalItem.profile_photo}
+                      alt={modalItem.party_name}
+                      className="w-24 h-24 rounded-full object-cover"
+                    />
+                  ) : (
+                    <div className="w-24 h-24 rounded-full flex items-center justify-center text-white text-2xl font-bold" style={{ backgroundColor: primaryColor }}>
+                      {modalItem.party_name?.charAt(0)?.toUpperCase() || '?'}
+                    </div>
+                  )}
+                </div>
+
+                {/* Info — right side */}
+                <div className="flex-1 min-w-0 pt-1">
+                  {/* Name */}
+                  <div className="mb-1">
+                    <span className="text-base font-semibold" style={{ color: theme.sidebar_active_text }}>
+                      {modalItem.party_name}
+                    </span>
+                  </div>
+
+                  {/* Email */}
+                  <div className="text-sm mb-4" style={{ color: theme.sidebar_text }}>
+                    {modalItem.email || '—'}
+                  </div>
+
+                  {/* RFID Input */}
+                  <input
+                    type="text"
+                    placeholder="Enter RFID TAG ID"
+                    value={modalRfid}
+                    onChange={(e) => setModalRfid(e.target.value)}
+                    className="w-full py-2.5 px-4 rounded-lg border text-sm outline-none mb-3"
+                    style={{
+                      backgroundColor: theme.sidebar_bg,
+                      borderColor: theme.sidebar_active_bg,
+                      color: theme.sidebar_active_text,
+                    }}
+                  />
+
+                  {/* Time stepper */}
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={() => setModalMinutes((m) => Math.max(sessionPresetStep, m - sessionPresetStep))}
+                      className="w-10 h-10 rounded-lg flex items-center justify-center text-white border-none cursor-pointer transition hover:opacity-90"
+                      style={{ backgroundColor: primaryColor }}
+                    >
+                      <Minus size={18} />
+                    </button>
+                    <div
+                      className="px-4 py-2.5 rounded-lg border text-sm font-medium min-w-[76px] text-center"
+                      style={{
+                        borderColor: theme.sidebar_active_bg,
+                        color: theme.sidebar_active_text,
+                      }}
+                    >
+                      {modalMinutes} mins
+                    </div>
+                    <button
+                      onClick={() => setModalMinutes((m) => m + sessionPresetStep)}
+                      className="w-10 h-10 rounded-lg flex items-center justify-center text-white border-none cursor-pointer transition hover:opacity-90"
+                      style={{ backgroundColor: primaryColor }}
+                    >
+                      <Plus size={18} />
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Footer buttons */}
+            <div className="px-6 pb-6 pt-2 flex gap-4">
+              <button
+                onClick={submitApprove}
+                className="flex-1 py-3 rounded-xl text-white text-sm font-semibold border-none cursor-pointer transition hover:opacity-90"
+                style={{ backgroundColor: primaryColor }}
+              >
+                Approve
+              </button>
+              <button
+                onClick={handleDeclineFromModal}
+                className="flex-1 py-3 rounded-xl text-sm font-semibold border cursor-pointer transition hover:opacity-80"
+                style={{
+                  backgroundColor: 'transparent',
+                  borderColor: theme.sidebar_active_bg,
+                  color: theme.sidebar_active_text,
+                }}
+              >
+                Decline
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
 
 export default Dashboard;
+
+/* CSRF cookie helper for Django session auth */
+function getCookie(name) {
+  const value = `; ${document.cookie}`;
+  const parts = value.split(`; ${name}=`);
+  if (parts.length === 2) return parts.pop().split(';').shift();
+  return '';
+}

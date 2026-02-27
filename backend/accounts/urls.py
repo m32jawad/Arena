@@ -14,6 +14,7 @@ urlpatterns = [
     path('public/storylines/', views.public_storyline_list, name='public-storyline-list'),
     path('storylines/<int:pk>/', views.storyline_detail, name='storyline-detail'),
     path('dashboard-theme/', views.dashboard_theme_view, name='dashboard-theme'),
+    path('app-theme/', views.app_theme_view, name='app-theme'),
     path('controllers/', views.controller_list_create, name='controller-list-create'),
     path('controllers/<int:pk>/', views.controller_detail, name='controller-detail'),
     path('controller-test/', views.controller_test_page, name='controller-test'),

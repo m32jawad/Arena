@@ -59,6 +59,117 @@ const Settings = () => {
   const [themeError, setThemeError] = useState('');
   const [themeSuccess, setThemeSuccess] = useState('');
 
+  // ── App Theme (Signup Page) ──
+  const [appThemeForm, setAppThemeForm] = useState({
+    background_type: 'solid',
+    background_value: '#1a1a2e',
+    font_family: '',
+    font_color: '#FFFFFF',
+    button_color: '#CB30E0',
+    button_text_color: '#FFFFFF',
+  });
+  const [appThemeImageFile, setAppThemeImageFile] = useState(null);
+  const [appThemeImagePreview, setAppThemeImagePreview] = useState('');
+  const [appThemeVideoFile, setAppThemeVideoFile] = useState(null);
+  const [appThemeVideoPreview, setAppThemeVideoPreview] = useState('');
+  const [appThemeLoading, setAppThemeLoading] = useState(false);
+  const [appThemeError, setAppThemeError] = useState('');
+  const [appThemeSuccess, setAppThemeSuccess] = useState('');
+
+  const fetchAppThemeSettings = useCallback(async () => {
+    setAppThemeLoading(true);
+    setAppThemeError('');
+    try {
+      const data = await apiFetch(`${API_BASE}/app-theme/`);
+      setAppThemeForm({
+        background_type: data.background_type || 'solid',
+        background_value: data.background_value || '#1a1a2e',
+        font_family: data.font_family || '',
+        font_color: data.font_color || '#FFFFFF',
+        button_color: data.button_color || '#CB30E0',
+        button_text_color: data.button_text_color || '#FFFFFF',
+      });
+      setAppThemeImagePreview(data.background_image || '');
+      setAppThemeVideoPreview(data.background_video || '');
+      setAppThemeImageFile(null);
+      setAppThemeVideoFile(null);
+    } catch (err) {
+      setAppThemeError(err.message);
+    } finally {
+      setAppThemeLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (activeTab === 'app-theme') fetchAppThemeSettings();
+  }, [activeTab, fetchAppThemeSettings]);
+
+  const handleAppThemeSave = async () => {
+    setAppThemeError('');
+    setAppThemeSuccess('');
+    try {
+      const formData = new FormData();
+      formData.append('background_type', appThemeForm.background_type);
+      formData.append('background_value', appThemeForm.background_value);
+      formData.append('font_family', appThemeForm.font_family);
+      formData.append('font_color', appThemeForm.font_color);
+      formData.append('button_color', appThemeForm.button_color);
+      formData.append('button_text_color', appThemeForm.button_text_color);
+
+      if (appThemeImageFile) {
+        formData.append('background_image', appThemeImageFile);
+      }
+      if (appThemeForm.background_type !== 'image') {
+        formData.append('clear_background_image', 'true');
+      }
+
+      if (appThemeVideoFile) {
+        formData.append('background_video', appThemeVideoFile);
+      }
+      if (appThemeForm.background_type !== 'video') {
+        formData.append('clear_background_video', 'true');
+      }
+
+      const res = await fetch(`${API_BASE}/app-theme/`, {
+        method: 'PUT',
+        credentials: 'include',
+        headers: { 'X-CSRFToken': getCookie('csrftoken') || '' },
+        body: formData,
+      });
+      if (!res.ok) {
+        const d = await res.json();
+        throw new Error(d.error || 'Request failed');
+      }
+      setAppThemeSuccess('App theme saved! Changes will appear on signup page in real-time.');
+      setTimeout(() => setAppThemeSuccess(''), 3000);
+    } catch (err) {
+      setAppThemeError(err.message);
+    }
+  };
+
+  const handleAppThemeReset = () => {
+    const defaults = {
+      background_type: 'solid',
+      background_value: '#1a1a2e',
+      font_family: '',
+      font_color: '#FFFFFF',
+      button_color: '#CB30E0',
+      button_text_color: '#FFFFFF',
+    };
+    setAppThemeForm(defaults);
+    setAppThemeImageFile(null);
+    setAppThemeImagePreview('');
+    setAppThemeVideoFile(null);
+    setAppThemeVideoPreview('');
+  };
+
+  const GOOGLE_FONTS_APP = [
+    '', 'Cairo', 'Barlow Condensed', 'Roboto', 'Open Sans', 'Lato', 'Montserrat',
+    'Poppins', 'Raleway', 'Nunito', 'Inter', 'Oswald', 'Playfair Display',
+    'Merriweather', 'Ubuntu', 'Quicksand', 'Rubik', 'Comfortaa', 'Orbitron',
+    'Bebas Neue', 'Anton', 'Righteous', 'Bangers', 'Press Start 2P',
+  ];
+
   const GOOGLE_FONTS = [
     '', 'Cairo', 'Barlow Condensed', 'Roboto', 'Open Sans', 'Lato', 'Montserrat',
     'Poppins', 'Raleway', 'Nunito', 'Inter', 'Oswald', 'Playfair Display',
@@ -396,7 +507,14 @@ const Settings = () => {
               className="px-3 py-1.5 rounded-lg text-sm font-medium"
               style={activeTab === 'themes' ? { backgroundColor: globalTheme.sidebar_active_bg, color: globalTheme.sidebar_active_text } : { color: globalTheme.sidebar_text }}
             >
-              Themes
+              Dashboard Theme
+            </button>
+            <button
+              onClick={() => setActiveTab('app-theme')}
+              className="px-3 py-1.5 rounded-lg text-sm font-medium"
+              style={activeTab === 'app-theme' ? { backgroundColor: globalTheme.sidebar_active_bg, color: globalTheme.sidebar_active_text } : { color: globalTheme.sidebar_text }}
+            >
+              App Theme (Signup)
             </button>
             <button
               onClick={() => setActiveTab('staff')}
@@ -703,6 +821,206 @@ const Settings = () => {
                   <div className="flex gap-3 pt-2">
                     <button onClick={handleThemeSave} className="text-white px-4 py-2 rounded font-medium text-sm" style={{ backgroundColor: primaryColor }}>Save & Apply Theme</button>
                     <button onClick={handleThemeReset} className="px-4 py-2 border rounded text-sm" style={{ borderColor: globalTheme.sidebar_active_bg, color: globalTheme.sidebar_text }}>Reset to Defaults</button>
+                  </div>
+                </>
+              )}
+            </div>
+          )}
+
+          {activeTab === 'app-theme' && (
+            <div className="space-y-6 max-w-3xl">
+              {appThemeError && (
+                <div className="p-3 bg-red-50 border border-red-200 rounded-lg text-sm text-red-600">{appThemeError}</div>
+              )}
+              {appThemeSuccess && (
+                <div className="p-3 bg-green-50 border border-green-200 rounded-lg text-sm text-green-600">{appThemeSuccess}</div>
+              )}
+              {appThemeLoading ? (
+                <div className="text-center py-8" style={labelSt}>Loading app theme...</div>
+              ) : (
+                <>
+                  <div>
+                    <label className="text-sm font-medium block mb-2" style={headLabelSt}>Background Type</label>
+                    <div className="flex gap-3 flex-wrap">
+                      {['solid', 'gradient', 'image', 'video'].map((t) => (
+                        <button
+                          key={t}
+                          onClick={() => setAppThemeForm({ ...appThemeForm, background_type: t })}
+                          className="px-4 py-2 rounded-lg text-sm border font-medium capitalize"
+                          style={appThemeForm.background_type === t
+                            ? { backgroundColor: primaryColor, color: '#fff', borderColor: primaryColor }
+                            : { backgroundColor: globalTheme.sidebar_bg, color: globalTheme.sidebar_text, borderColor: globalTheme.sidebar_active_bg }}
+                        >
+                          {t}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Solid Color */}
+                  {appThemeForm.background_type === 'solid' && (
+                    <div>
+                      <label className="text-sm block mb-1" style={labelSt}>Background Color</label>
+                      <div className="flex items-center gap-3">
+                        <input
+                          type="color"
+                          value={appThemeForm.background_value || '#1a1a2e'}
+                          onChange={(e) => setAppThemeForm({ ...appThemeForm, background_value: e.target.value })}
+                          className="w-12 h-10 rounded border cursor-pointer"
+                          style={{ borderColor: globalTheme.sidebar_active_bg }}
+                        />
+                        <input
+                          type="text"
+                          value={appThemeForm.background_value}
+                          onChange={(e) => setAppThemeForm({ ...appThemeForm, background_value: e.target.value })}
+                          placeholder="#1a1a2e"
+                          className="flex-1 p-2 border rounded text-sm"
+                          style={inputSt}
+                        />
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Gradient */}
+                  {appThemeForm.background_type === 'gradient' && (
+                    <div>
+                      <label className="text-sm block mb-1" style={labelSt}>CSS Gradient</label>
+                      <input
+                        type="text"
+                        value={appThemeForm.background_value}
+                        onChange={(e) => setAppThemeForm({ ...appThemeForm, background_value: e.target.value })}
+                        placeholder="linear-gradient(135deg, #667eea 0%, #764ba2 100%)"
+                        className="w-full p-2 border rounded text-sm"
+                        style={inputSt}
+                      />
+                      {appThemeForm.background_value && (
+                        <div className="mt-2 w-full h-16 rounded border" style={{ background: appThemeForm.background_value }} />
+                      )}
+                    </div>
+                  )}
+
+                  {/* Image */}
+                  {appThemeForm.background_type === 'image' && (
+                    <div>
+                      <label className="text-sm block mb-1" style={labelSt}>Background Image</label>
+                      <input
+                        type="file"
+                        accept="image/*"
+                        onChange={(e) => {
+                          const file = e.target.files[0];
+                          if (file) {
+                            setAppThemeImageFile(file);
+                            setAppThemeImagePreview(URL.createObjectURL(file));
+                          }
+                        }}
+                        className="w-full text-sm"
+                      />
+                      {appThemeImagePreview && (
+                        <img src={appThemeImagePreview} alt="Background preview" className="mt-2 w-full max-h-32 object-cover rounded border" />
+                      )}
+                    </div>
+                  )}
+
+                  {/* Video */}
+                  {appThemeForm.background_type === 'video' && (
+                    <div>
+                      <label className="text-sm block mb-1" style={labelSt}>Background Video</label>
+                      <input
+                        type="file"
+                        accept="video/*"
+                        onChange={(e) => {
+                          const file = e.target.files[0];
+                          if (file) {
+                            setAppThemeVideoFile(file);
+                            setAppThemeVideoPreview(URL.createObjectURL(file));
+                          }
+                        }}
+                        className="w-full text-sm"
+                      />
+                      {appThemeVideoPreview && (
+                        <div className="mt-2">
+                          <p className="text-xs mb-1" style={labelSt}>Preview:</p>
+                          <video src={appThemeVideoPreview} controls autoPlay loop muted className="w-full max-h-32 rounded border" />
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Font Family */}
+                  <div>
+                    <label className="text-sm block mb-1" style={labelSt}>Font Family</label>
+                    <select
+                      value={appThemeForm.font_family}
+                      onChange={(e) => setAppThemeForm({ ...appThemeForm, font_family: e.target.value })}
+                      className="w-full p-2 border rounded text-sm"
+                      style={inputSt}
+                    >
+                      {GOOGLE_FONTS_APP.map((f) => (
+                        <option key={f} value={f}>{f || '— Default —'}</option>
+                      ))}
+                    </select>
+                    {appThemeForm.font_family && (
+                      <p className="mt-1 text-xs" style={{ fontFamily: appThemeForm.font_family, color: globalTheme.sidebar_text }}>Preview: {appThemeForm.font_family}</p>
+                    )}
+                  </div>
+
+                  {/* Colors */}
+                  <div>
+                    <label className="text-sm font-medium block mb-2" style={headLabelSt}>Colors</label>
+                    <div className="grid grid-cols-2 gap-4">
+                      {[
+                        { key: 'font_color', label: 'Text/Font Color' },
+                        { key: 'button_color', label: 'Button Color' },
+                        { key: 'button_text_color', label: 'Button Text Color' },
+                      ].map(({ key, label }) => (
+                        <div key={key}>
+                          <label className="text-xs block mb-1" style={labelSt}>{label}</label>
+                          <div className="flex items-center gap-2">
+                            <input
+                              type="color"
+                              value={appThemeForm[key] || '#FFFFFF'}
+                              onChange={(e) => setAppThemeForm({ ...appThemeForm, [key]: e.target.value })}
+                              className="w-9 h-9 rounded border cursor-pointer"
+                              style={{ borderColor: globalTheme.sidebar_active_bg }}
+                            />
+                            <input
+                              type="text"
+                              value={appThemeForm[key]}
+                              onChange={(e) => setAppThemeForm({ ...appThemeForm, [key]: e.target.value })}
+                              className="flex-1 p-2 border rounded text-sm"
+                              style={inputSt}
+                            />
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Live Preview */}
+                  <div>
+                    <label className="text-sm font-medium block mb-2" style={headLabelSt}>Live Preview (Signup Page)</label>
+                    <div className="rounded-lg border overflow-hidden h-48 flex flex-col items-center justify-center" style={{
+                      background: appThemeForm.background_type === 'gradient' 
+                        ? appThemeForm.background_value
+                        : appThemeForm.background_type === 'image' && appThemeImagePreview
+                        ? `url(${appThemeImagePreview})`
+                        : appThemeForm.background_value,
+                      backgroundSize: 'cover',
+                      backgroundPosition: 'center',
+                    }}>
+                      <div className="text-center">
+                        <div className="text-xl font-bold mb-3" style={{ color: appThemeForm.font_color, fontFamily: appThemeForm.font_family ? `${appThemeForm.font_family}, sans-serif` : 'inherit' }}>Sign Up</div>
+                        <button className="px-6 py-2 rounded-xl text-sm font-semibold transition hover:opacity-90" style={{ background: appThemeForm.button_color, color: appThemeForm.button_text_color }}>
+                          Next
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Actions */}
+                  <div className="flex gap-3 pt-2">
+                    <button onClick={handleAppThemeSave} className="text-white px-4 py-2 rounded font-medium text-sm" style={{ backgroundColor: primaryColor }}>Save & Apply Theme</button>
+                    <button onClick={handleAppThemeReset} className="px-4 py-2 border rounded text-sm" style={{ borderColor: globalTheme.sidebar_active_bg, color: globalTheme.sidebar_text }}>Reset to Defaults</button>
                   </div>
                 </>
               )}

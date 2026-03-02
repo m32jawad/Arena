@@ -2,7 +2,8 @@ import React, { useState, useEffect } from 'react';
 import { Search, ChevronLeft, ChevronRight, Eye, Edit, Slash, ChevronDown } from 'lucide-react';
 import { useTheme } from '../../context/ThemeContext';
 
-const API_BASE = process.env.REACT_APP_API_BASE || 'http://localhost:8000/api/auth';
+const defaultApiBase = `http://${window.location.hostname}:8000/api/auth`;
+const API_BASE = process.env.REACT_APP_API_BASE || defaultApiBase;
 
 const AVATARS = {
   "avatar-1": { bg: "#6C3483", skin: "#F39C12", hair: "#2C3E50" },

@@ -2,7 +2,8 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { X } from 'lucide-react';
 import { useTheme } from '../../context/ThemeContext';
 
-const API_BASE = process.env.REACT_APP_API_BASE || 'http://localhost:8000/api/auth';
+const defaultApiBase = `http://${window.location.hostname}:8000/api/auth`;
+const API_BASE = process.env.REACT_APP_API_BASE || defaultApiBase;
 
 const getCookie = (name) => {
   const value = `; ${document.cookie}`;

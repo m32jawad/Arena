@@ -2,7 +2,8 @@ import React, { createContext, useContext, useState, useEffect, useCallback } fr
 
 const ThemeContext = createContext();
 
-const API_BASE = process.env.REACT_APP_API_BASE || 'http://localhost:8000/api/auth';
+const defaultApiBase = `http://${window.location.hostname}:8000/api/auth`;
+const API_BASE = process.env.REACT_APP_API_BASE || defaultApiBase;
 
 const defaultTheme = {
   background_type: 'solid',

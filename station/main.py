@@ -95,49 +95,68 @@ async def lifespan(app: FastAPI):
     logger.info(f"   Simulate Hardware: {settings.simulate_hardware}")
     logger.info("=" * 60)
     
-    # Initialize hardware
-    state.hardware = HardwareManager(simulate=settings.simulate_hardware)
+    # Clean up any existing GPIO state on real hardware
+    if not settings.simulate_hardware:
+        try:
+            import RPi.GPIO as GPIO
+            GPIO.setwarnings(False)
+            GPIO.cleanup()
+            logger.info("🧹 Cleaned up existing GPIO state")
+            # Wait a moment for GPIO to settle
+            await asyncio.sleep(0.5)
+        except Exception as e:
+            logger.warning(f"Could not cleanup GPIO (might be first run): {e}")
     
-    # Initialize API client
-    state.api_client = BackendAPIClient(
-        base_url=settings.api_base_url,
-        station_id=settings.station_id
-    )
-    
-    # Initialize NFC reader
-    if settings.nfc_enabled:
-        state.nfc_reader = state.hardware.init_nfc_reader()
-        await state.nfc_reader.start(on_card_detected=handle_rfid_scan)
-    
-    # Initialize buttons
-    state.stop_button, state.hint_button = state.hardware.init_buttons(
-        stop_pin=settings.stop_button_pin,
-        hint_pin=settings.hint_button_pin
-    )
-    state.stop_button.setup(on_press=handle_stop_button)
-    state.hint_button.setup(on_press=handle_hint_button)
-    
-    # Initialize relays
-    (state.game_active_relay, 
-     state.reset_relay, 
-     state.ready_relay) = state.hardware.init_relays(
-        game_pin=settings.game_active_relay_pin,
-        reset_pin=settings.reset_relay_pin,
-        ready_pin=settings.ready_relay_pin
-    )
-    
-    # Set initial state to READY
-    state.ready_relay.turn_on()
-    
-    logger.info("✅ Station initialized and ready")
-    
-    yield
-    
-    # Cleanup
-    logger.info("🛑 Shutting down station...")
-    state.hardware.cleanup()
-    await state.api_client.close()
-    logger.info("👋 Station shutdown complete")
+    try:
+        # Initialize hardware
+        state.hardware = HardwareManager(simulate=settings.simulate_hardware)
+        
+        # Initialize API client
+        state.api_client = BackendAPIClient(
+            base_url=settings.api_base_url,
+            station_id=settings.station_id
+        )
+        
+        # Initialize NFC reader
+        if settings.nfc_enabled:
+            state.nfc_reader = state.hardware.init_nfc_reader()
+            await state.nfc_reader.start(on_card_detected=handle_rfid_scan)
+        
+        # Initialize buttons
+        state.stop_button, state.hint_button = state.hardware.init_buttons(
+            stop_pin=settings.stop_button_pin,
+            hint_pin=settings.hint_button_pin
+        )
+        state.stop_button.setup(on_press=handle_stop_button)
+        state.hint_button.setup(on_press=handle_hint_button)
+        
+        # Initialize relays
+        (state.game_active_relay, 
+         state.reset_relay, 
+         state.ready_relay) = state.hardware.init_relays(
+            game_pin=settings.game_active_relay_pin,
+            reset_pin=settings.reset_relay_pin,
+            ready_pin=settings.ready_relay_pin
+        )
+        
+        # Set initial state to READY
+        state.ready_relay.turn_on()
+        
+        logger.info("✅ Station initialized and ready")
+        
+        yield
+        
+    except Exception as e:
+        logger.error(f"❌ Startup failed: {e}")
+        raise
+    finally:
+        # Cleanup
+        logger.info("🛑 Shutting down station...")
+        if state.hardware:
+            state.hardware.cleanup()
+        if state.api_client:
+            await state.api_client.close()
+        logger.info("👋 Station shutdown complete")
 
 
 # ============================================================================
@@ -342,6 +361,7 @@ async def simulate_rfid_scan(request: SimulateRFIDRequest):
 
 
 @app.post("/simulate/button/stop")
+async def simulate_stop_button():
     """Simulate stop button press (for testing)."""
     if not settings.simulate_hardware:
         raise HTTPException(status_code=400, detail="Simulation mode not enabled")

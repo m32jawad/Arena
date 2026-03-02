@@ -218,7 +218,7 @@ class RaspberryPiNFCReader(NFCReader):
 
 
 class RaspberryPiButton(Button):
-    """Real button using RPi.GPIO."""
+    """Real button using RPi.GPIO with polling instead of interrupts."""
     
     def __init__(self, pin: int, name: str, pull_up: bool = True):
         try:
@@ -228,9 +228,14 @@ class RaspberryPiButton(Button):
             self.pin = pin
             self.name = name
             self.pull_up = pull_up
+            self.on_press = None
+            self.last_state = GPIO.HIGH if pull_up else GPIO.LOW
+            self._poll_task = None
+            self._running = False
             
             # Setup GPIO mode if not already set
             try:
+                self.GPIO.setwarnings(False)
                 self.GPIO.setmode(self.GPIO.BCM)
             except:
                 pass  # Already set
@@ -240,28 +245,56 @@ class RaspberryPiButton(Button):
             raise
     
     def setup(self, on_press: Callable[[], None]):
-        """Setup button with callback."""
-        pull = self.GPIO.PUD_UP if self.pull_up else self.GPIO.PUD_DOWN
-        self.GPIO.setup(self.pin, self.GPIO.IN, pull_up_down=pull)
+        """Setup button with callback using polling."""
+        try:
+            self.on_press = on_press
+            
+            # Setup the pin
+            pull = self.GPIO.PUD_UP if self.pull_up else self.GPIO.PUD_DOWN
+            self.GPIO.setup(self.pin, self.GPIO.IN, pull_up_down=pull)
+            
+            # Start polling in background
+            self._running = True
+            self._poll_task = asyncio.create_task(self._poll_button())
+            
+            logger.info(f"✅ Button '{self.name}' setup on GPIO{self.pin} (polling mode)")
+        except Exception as e:
+            logger.error(f"❌ Failed to setup button '{self.name}' on GPIO{self.pin}: {e}")
+            raise
+    
+    async def _poll_button(self):
+        """Poll button state in background task."""
+        import time
         
-        # Add event detection
-        edge = self.GPIO.FALLING if self.pull_up else self.GPIO.RISING
-        self.GPIO.add_event_detect(
-            self.pin,
-            edge,
-            callback=lambda channel: on_press(),
-            bouncetime=300
-        )
-        
-        logger.info(f"✅ Button '{self.name}' setup on GPIO{self.pin}")
+        while self._running:
+            try:
+                current_state = self.GPIO.input(self.pin)
+                
+                # Detect button press (transition from HIGH to LOW for pull-up)
+                pressed = (self.pull_up and current_state == self.GPIO.LOW and self.last_state == self.GPIO.HIGH)
+                
+                if pressed and self.on_press:
+                    logger.debug(f"🔘 Button '{self.name}' pressed")
+                    self.on_press()
+                    # Debounce: wait before detecting next press
+                    await asyncio.sleep(0.3)
+                
+                self.last_state = current_state
+                await asyncio.sleep(0.05)  # Poll every 50ms
+                
+            except Exception as e:
+                logger.error(f"Error polling button '{self.name}': {e}")
+                await asyncio.sleep(0.1)
     
     def cleanup(self):
         """Cleanup button resources."""
         try:
-            self.GPIO.remove_event_detect(self.pin)
+            self._running = False
+            if self._poll_task:
+                self._poll_task.cancel()
             self.GPIO.cleanup(self.pin)
-        except:
-            pass
+        except Exception as e:
+            logger.debug(f"Button cleanup error (expected): {e}")
 
 
 class RaspberryPiRelay(Relay):
@@ -358,12 +391,23 @@ class HardwareManager:
         """Cleanup all hardware resources."""
         logger.info("🧹 Cleaning up hardware resources...")
         
-        if self.nfc_reader:
-            asyncio.create_task(self.nfc_reader.stop())
+        # Stop buttons first (they have polling tasks)
+        for button in [self.stop_button, self.hint_button]:
+            if button:
+                try:
+                    button.cleanup()
+                except Exception as e:
+                    logger.debug(f"Button cleanup: {e}")
         
+        # Stop NFC reader
+        if self.nfc_reader:
+            try:
+                asyncio.create_task(self.nfc_reader.stop())
+            except:
+                pass
+        
+        # Cleanup relays
         for component in [
-            self.stop_button,
-            self.hint_button,
             self.game_active_relay,
             self.reset_relay,
             self.ready_relay
@@ -372,6 +416,6 @@ class HardwareManager:
                 try:
                     component.cleanup()
                 except Exception as e:
-                    logger.error(f"Error cleaning up component: {e}")
+                    logger.debug(f"Component cleanup: {e}")
         
         logger.info("✅ Hardware cleanup complete")

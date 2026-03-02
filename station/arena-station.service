@@ -1,0 +1,17 @@
+[Unit]
+Description=Arena Station Service
+After=network.target
+
+[Service]
+Type=simple
+User=pi
+WorkingDirectory=/home/pi/arena/station
+Environment="PATH=/home/pi/arena/station/venv/bin"
+ExecStart=/home/pi/arena/station/venv/bin/python main.py
+Restart=always
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

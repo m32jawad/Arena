@@ -1,0 +1,368 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Station WebSocket Test</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+            background: #1a1a1a;
+            color: #fff;
+        }
+        
+        .container {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+        }
+        
+        .panel {
+            background: #2a2a2a;
+            border-radius: 8px;
+            padding: 20px;
+            border: 1px solid #3a3a3a;
+        }
+        
+        h1 {
+            margin-top: 0;
+            color: #4CAF50;
+        }
+        
+        h2 {
+            margin-top: 0;
+            font-size: 18px;
+            color: #64B5F6;
+        }
+        
+        .status {
+            padding: 10px;
+            border-radius: 4px;
+            margin-bottom: 15px;
+            font-weight: bold;
+        }
+        
+        .status.connected {
+            background: #4CAF50;
+            color: white;
+        }
+        
+        .status.disconnected {
+            background: #f44336;
+            color: white;
+        }
+        
+        input, button, select {
+            width: 100%;
+            padding: 10px;
+            margin: 5px 0;
+            border-radius: 4px;
+            border: 1px solid #555;
+            background: #333;
+            color: #fff;
+            font-size: 14px;
+        }
+        
+        button {
+            background: #4CAF50;
+            cursor: pointer;
+            font-weight: bold;
+            border: none;
+        }
+        
+        button:hover {
+            background: #45a049;
+        }
+        
+        button:disabled {
+            background: #555;
+            cursor: not-allowed;
+        }
+        
+        .messages {
+            background: #1a1a1a;
+            border: 1px solid #3a3a3a;
+            border-radius: 4px;
+            padding: 10px;
+            height: 400px;
+            overflow-y: auto;
+            font-family: 'Courier New', monospace;
+            font-size: 12px;
+        }
+        
+        .message {
+            margin: 5px 0;
+            padding: 8px;
+            border-radius: 4px;
+            border-left: 3px solid #4CAF50;
+            background: #2a2a2a;
+        }
+        
+        .message.sent {
+            border-left-color: #2196F3;
+        }
+        
+        .message.error {
+            border-left-color: #f44336;
+        }
+        
+        .message-type {
+            color: #64B5F6;
+            font-weight: bold;
+        }
+        
+        .message-time {
+            color: #888;
+            font-size: 11px;
+        }
+        
+        .controls {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 10px;
+        }
+        
+        .full-width {
+            grid-column: 1 / -1;
+        }
+        
+        label {
+            display: block;
+            margin: 10px 0 5px;
+            color: #aaa;
+            font-size: 13px;
+        }
+    </style>
+</head>
+<body>
+    <h1>🎮 Arena Station WebSocket Test</h1>
+    
+    <div class="container">
+        <!-- Connection Panel -->
+        <div class="panel">
+            <h2>🔌 Connection</h2>
+            
+            <label>Station URL:</label>
+            <input type="text" id="stationUrl" value="ws://localhost:8001/ws" placeholder="ws://station-ip:8001/ws">
+            
+            <div id="status" class="status disconnected">● Disconnected</div>
+            
+            <button id="connectBtn" onclick="connect()">Connect</button>
+            <button id="disconnectBtn" onclick="disconnect()" disabled>Disconnect</button>
+            
+            <h2 style="margin-top: 30px;">⚙️ Quick Actions</h2>
+            
+            <button onclick="sendPing()" disabled id="pingBtn">Send Ping</button>
+            <button onclick="getStatus()" disabled id="statusBtn">Get Status</button>
+        </div>
+        
+        <!-- Simulation Panel -->
+        <div class="panel">
+            <h2>🎯 Simulate Hardware Events</h2>
+            
+            <label>Station API URL:</label>
+            <input type="text" id="apiUrl" value="http://localhost:8001" placeholder="http://station-ip:8001">
+            
+            <label>RFID Tag:</label>
+            <div class="controls">
+                <select id="rfidPreset" onchange="updateRfidFromPreset()">
+                    <option value="">-- Select Preset --</option>
+                    <option value="ABC123">Test Player (ABC123)</option>
+                    <option value="STAFF001">Staff (STAFF001)</option>
+                    <option value="DEF456">Player 2 (DEF456)</option>
+                    <option value="custom">Custom...</option>
+                </select>
+                <input type="text" id="rfidTag" placeholder="ABC123">
+            </div>
+            
+            <button onclick="simulateRFID()" class="full-width">📱 Simulate RFID Scan</button>
+            
+            <label style="margin-top: 15px;">Buttons:</label>
+            <div class="controls">
+                <button onclick="simulateButton('stop')">🛑 Stop Button</button>
+                <button onclick="simulateButton('hint')">💡 Hint Button</button>
+            </div>
+            
+            <button onclick="endSession()" class="full-width" style="background: #f44336; margin-top: 10px;">🛑 End Session</button>
+        </div>
+    </div>
+    
+    <!-- Messages Panel (full width) -->
+    <div class="panel" style="margin-top: 20px;">
+        <h2>📋 Messages</h2>
+        <button onclick="clearMessages()" style="width: auto; padding: 5px 15px; float: right; font-size: 12px;">Clear</button>
+        <div id="messages" class="messages"></div>
+    </div>
+    
+    <script>
+        let ws = null;
+        
+        function connect() {
+            const url = document.getElementById('stationUrl').value;
+            
+            addMessage('Connecting to ' + url + '...', 'system');
+            
+            ws = new WebSocket(url);
+            
+            ws.onopen = () => {
+                updateConnectionStatus(true);
+                addMessage('✅ Connected to station', 'system');
+            };
+            
+            ws.onclose = () => {
+                updateConnectionStatus(false);
+                addMessage('❌ Disconnected from station', 'system');
+            };
+            
+            ws.onerror = (error) => {
+                addMessage('⚠️ WebSocket error: ' + error, 'error');
+            };
+            
+            ws.onmessage = (event) => {
+                try {
+                    const data = JSON.parse(event.data);
+                    addMessage(JSON.stringify(data, null, 2), 'received', data.type);
+                } catch (e) {
+                    addMessage(event.data, 'received');
+                }
+            };
+        }
+        
+        function disconnect() {
+            if (ws) {
+                ws.close();
+                ws = null;
+            }
+        }
+        
+        function updateConnectionStatus(connected) {
+            const status = document.getElementById('status');
+            const connectBtn = document.getElementById('connectBtn');
+            const disconnectBtn = document.getElementById('disconnectBtn');
+            const pingBtn = document.getElementById('pingBtn');
+            const statusBtn = document.getElementById('statusBtn');
+            
+            if (connected) {
+                status.className = 'status connected';
+                status.textContent = '● Connected';
+                connectBtn.disabled = true;
+                disconnectBtn.disabled = false;
+                pingBtn.disabled = false;
+                statusBtn.disabled = false;
+            } else {
+                status.className = 'status disconnected';
+                status.textContent = '● Disconnected';
+                connectBtn.disabled = false;
+                disconnectBtn.disabled = true;
+                pingBtn.disabled = true;
+                statusBtn.disabled = true;
+            }
+        }
+        
+        function sendMessage(message) {
+            if (ws && ws.readyState === WebSocket.OPEN) {
+                ws.send(JSON.stringify(message));
+                addMessage(JSON.stringify(message, null, 2), 'sent', message.type);
+            } else {
+                addMessage('❌ Not connected', 'error');
+            }
+        }
+        
+        function sendPing() {
+            sendMessage({ type: 'ping' });
+        }
+        
+        function getStatus() {
+            sendMessage({ type: 'get_status' });
+        }
+        
+        async function apiCall(endpoint, method = 'GET', body = null) {
+            const apiUrl = document.getElementById('apiUrl').value;
+            const url = apiUrl + endpoint;
+            
+            addMessage(`→ ${method} ${endpoint}`, 'sent');
+            
+            try {
+                const options = {
+                    method: method,
+                    headers: {
+                        'Content-Type': 'application/json'
+                    }
+                };
+                
+                if (body) {
+                    options.body = JSON.stringify(body);
+                }
+                
+                const response = await fetch(url, options);
+                const data = await response.json();
+                
+                addMessage('← ' + JSON.stringify(data, null, 2), 'received');
+                return data;
+            } catch (error) {
+                addMessage('⚠️ API Error: ' + error.message, 'error');
+                return null;
+            }
+        }
+        
+        function updateRfidFromPreset() {
+            const preset = document.getElementById('rfidPreset').value;
+            const rfidInput = document.getElementById('rfidTag');
+            
+            if (preset && preset !== 'custom') {
+                rfidInput.value = preset;
+            }
+        }
+        
+        async function simulateRFID() {
+            const rfidTag = document.getElementById('rfidTag').value;
+            
+            if (!rfidTag) {
+                addMessage('⚠️ Please enter an RFID tag', 'error');
+                return;
+            }
+            
+            await apiCall('/simulate/rfid', 'POST', { rfid_tag: rfidTag });
+        }
+        
+        async function simulateButton(button) {
+            await apiCall(`/simulate/button/${button}`, 'POST');
+        }
+        
+        async function endSession() {
+            if (confirm('End the current session?')) {
+                await apiCall('/session/end', 'POST');
+            }
+        }
+        
+        function addMessage(text, type = 'received', messageType = null) {
+            const messages = document.getElementById('messages');
+            const message = document.createElement('div');
+            message.className = 'message ' + type;
+            
+            const time = new Date().toLocaleTimeString();
+            const timeSpan = `<span class="message-time">${time}</span>`;
+            
+            let content = text;
+            if (messageType) {
+                content = `<span class="message-type">[${messageType}]</span><br>${text}`;
+            }
+            
+            message.innerHTML = timeSpan + ' ' + content;
+            messages.appendChild(message);
+            messages.scrollTop = messages.scrollHeight;
+        }
+        
+        function clearMessages() {
+            document.getElementById('messages').innerHTML = '';
+            addMessage('Messages cleared', 'system');
+        }
+        
+        // Auto-connect on load (optional)
+        // window.onload = () => connect();
+    </script>
+</body>
+</html>

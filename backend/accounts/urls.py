@@ -42,6 +42,9 @@ urlpatterns = [
     path('rfid/station-recent/', views.station_recent_scans, name='station-recent-scans'),
     path('rfid-test/', views.rfid_test_page, name='rfid-test'),
 
+    # Station health reporting (called by station hardware)
+    path('controllers/health/', views.controller_health_update, name='controller-health-update'),
+
     # Public leaderboard
     path('public/leaderboard/', views.public_leaderboard, name='public-leaderboard'),
 

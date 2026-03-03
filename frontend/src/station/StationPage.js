@@ -1,6 +1,19 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useSearchParams } from 'react-router-dom';
 
+// Inject CSS animation for pulse effect
+if (typeof document !== 'undefined' && !document.getElementById('station-pulse-css')) {
+  const style = document.createElement('style');
+  style.id = 'station-pulse-css';
+  style.textContent = `
+    @keyframes pulse {
+      0%, 100% { opacity: 1; transform: scale(1); }
+      50% { opacity: 0.5; transform: scale(1.1); }
+    }
+  `;
+  document.head.appendChild(style);
+}
+
 const defaultApiBase = `http://${window.location.hostname}:8000/api/auth`;
 const API_BASE = process.env.REACT_APP_API_BASE || defaultApiBase;
 
@@ -248,11 +261,9 @@ export default function StationPage() {
 
         ws.onopen = () => {
           console.log('✅ Connected to station hardware');
-          console.log('✅ WebSocket readyState:', ws.readyState);
           setWsConnected(true);
-          if (appState === STATES.OFFLINE) {
-            setAppState(STATES.READY);
-          }
+          // Don't set appState here — the 'connection' message from station
+          // will sync the correct state (READY, ACTIVE, or RESULT)
 
           // Send heartbeat and status check every 10 seconds
           heartbeatInterval = setInterval(() => {
@@ -275,23 +286,19 @@ export default function StationPage() {
 
             switch (data.type) {
               case 'connection':
-                // Initial connection - check if there's an active session
-                console.log('🔌 Connection message received');
+                // Initial connection — sync state with station
+                console.log('🔌 Connection message received, station mode:', data.station_mode);
                 setStationStatus({
                   station_id: data.station_id,
                   station_name: data.station_name,
                   hardware_mode: data.hardware_mode,
+                  station_mode: data.station_mode,
                   has_active_session: data.current_session ? true : false,
                 });
                 setLastHealthCheck(new Date());
-                console.log('🔌 Station status:', {
-                  station_id: data.station_id,
-                  station_name: data.station_name,
-                  hardware_mode: data.hardware_mode,
-                  has_active_session: data.current_session ? true : false,
-                });
-                if (data.current_session) {
-                  // Resume active session
+                
+                // Sync frontend state with station mode
+                if (data.station_mode === 'active' && data.current_session) {
                   console.log('🔄 Resuming active session');
                   const sess = data.current_session;
                   setSession({
@@ -303,6 +310,17 @@ export default function StationPage() {
                   setCountdown(sess.remaining_seconds || 0);
                   setStorylineHint(sess.storyline_hint || '');
                   setAppState(STATES.ACTIVE);
+                } else if (data.station_mode === 'result' && data.last_result) {
+                  console.log('🔄 Resuming result screen');
+                  setResult({
+                    party_name: data.last_result.party_name,
+                    points: data.last_result.total_points,
+                    elapsed_seconds: data.last_result.elapsed_seconds,
+                    remaining_points_added: data.last_result.remaining_points_added,
+                  });
+                  setAppState(STATES.RESULT);
+                } else if (data.station_mode === 'ready') {
+                  setAppState(STATES.READY);
                 }
                 break;
 
@@ -310,7 +328,6 @@ export default function StationPage() {
                 // Hardware detected RFID scan and started session
                 console.log('🎮 Session started event received');
                 const startSess = data.session;
-                console.log('🎮 Session data:', startSess);
                 setSession({
                   id: startSess.session_id,
                   party_name: startSess.party_name,
@@ -323,69 +340,69 @@ export default function StationPage() {
                 setRfidInput('');
                 setRfidError('');
                 setShowHint(false);
-                console.log('🎮 State changed to ACTIVE');
                 break;
 
               case 'session_ended':
                 // Session ended (stop button pressed or staff scan)
                 console.log('🏁 Session ended event received');
                 const endResult = data.result;
-                console.log('🏁 Result data:', endResult);
                 setResult({
                   party_name: endResult.party_name,
                   points: endResult.total_points,
                   elapsed_seconds: endResult.elapsed_seconds,
+                  remaining_points_added: endResult.remaining_points_added,
                 });
                 setAppState(STATES.RESULT);
                 setSession(null);
                 setShowHint(false);
                 clearInterval(countdownRef.current);
-                console.log('🏁 State changed to RESULT');
+                break;
+
+              case 'station_reset':
+                // Staff scanned card on RESULT screen — go back to READY
+                console.log('🔄 Station reset received');
+                setResult(null);
+                setSession(null);
+                setRfidInput('');
+                setRfidError('');
+                setStaffRfid('');
+                setStaffError('');
+                setStorylineHint('');
+                setShowHint(false);
+                setAppState(STATES.READY);
                 break;
 
               case 'button_press':
                 // Hardware button pressed
-                console.log('🔘 Button press event received:', data.button);
+                console.log('🔘 Button press:', data.button);
                 if (data.button === 'hint') {
                   if (data.hint) {
-                    console.log('💡 Setting hint:', data.hint);
                     setStorylineHint(data.hint);
                   }
                   setShowHint(true);
-                  // Auto-hide hint after 10 seconds
                   setTimeout(() => setShowHint(false), 10000);
-                } else if (data.button === 'stop') {
-                  console.log('🛑 Stop button pressed on hardware');
                 }
                 break;
 
               case 'error':
                 console.log('❌ Error received:', data.message);
                 setRfidError(data.message || 'Station error');
-                setTimeout(() => setRfidError(''), 5000);
+                setTimeout(() => setRfidError(''), 8000);
                 break;
 
               case 'pong':
-                // Heartbeat response
-                console.log('💓 Pong received');
                 setLastHealthCheck(new Date());
                 break;
 
               case 'status':
-                // Status update response
-                console.log('📊 Status update received');
                 setStationStatus({
                   station_id: data.station_id,
                   station_name: data.station_name,
                   hardware_mode: data.hardware_mode,
+                  station_mode: data.station_mode,
                   has_active_session: data.current_session ? true : false,
                 });
                 setLastHealthCheck(new Date());
-                console.log('📊 Updated status:', {
-                  station_id: data.station_id,
-                  station_name: data.station_name,
-                  hardware_mode: data.hardware_mode,
-                });
                 break;
 
               default:
@@ -404,10 +421,8 @@ export default function StationPage() {
         ws.onclose = () => {
           console.log('🔌 Disconnected from station hardware');
           setWsConnected(false);
-          if (appState !== STATES.OFFLINE) {
-            // Only set to offline if we're not already there
-            // Keep current state but show disconnected indicator
-          }
+          // Keep current appState — don't reset to OFFLINE on disconnect
+          // The reconnect will re-sync state via 'connection' message
           wsRef.current = null;
 
           // Clear heartbeat
@@ -440,7 +455,7 @@ export default function StationPage() {
       setStationStatus(null);
       setLastHealthCheck(null);
     };
-  }, [selectedCtrl, appState]);
+  }, [selectedCtrl]); // Only reconnect when station changes, NOT on appState change
 
   // ── helpers ──────────────────────────────────
   async function doStop(sess) {
@@ -608,40 +623,51 @@ export default function StationPage() {
             </div>
           </div>
 
-          {wsConnected ? (
-            // Hardware mode - show waiting message
-            <>
-              <p style={styles.stateSubtitle}>Scan your RFID tag on the hardware reader to begin</p>
-              <p style={{ ...styles.stateSubtitle, fontSize: '1rem', marginTop: '20px', color: '#00ff00' }}>
-                NFC Reader Active • Press STOP to end session • Press HINT for clues
-              </p>
-            </>
-          ) : (
-            // Manual mode - show input form
-            <>
-              <p style={styles.stateSubtitle}>Scan or enter your RFID tag to begin</p>
-              <div style={styles.inputRow}>
-                <input
-                  ref={rfidRef}
-                  type="text"
-                  value={rfidInput}
-                  onChange={e => { setRfidInput(e.target.value); setRfidError(''); }}
-                  onKeyDown={e => e.key === 'Enter' && handleRfidSubmit()}
-                  placeholder="RFID / Card Number"
-                  style={styles.textInput}
-                  autoComplete="off"
-                />
-                <button
-                  onClick={handleRfidSubmit}
-                  disabled={rfidBusy || !rfidInput.trim()}
-                  style={{ ...styles.greenBtn, opacity: (rfidBusy || !rfidInput.trim()) ? 0.5 : 1 }}
-                >
-                  {rfidBusy ? 'Checking…' : 'START'}
-                </button>
-              </div>
-            </>
+          {/* Waiting message — always shown, scanning happens via hardware */}
+          <p style={styles.stateSubtitle}>
+            {wsConnected
+              ? 'Scan your RFID tag on the reader to begin'
+              : 'Scan or enter your RFID tag to begin'}
+          </p>
+
+          {/* Animated scan indicator when hardware connected */}
+          {wsConnected && (
+            <div style={styles.scanPulse}>
+              <div style={styles.scanIcon}>📡</div>
+              <p style={styles.scanText}>Waiting for RFID scan…</p>
+            </div>
           )}
-          {rfidError && <div style={styles.errorBanner}>{rfidError}</div>}
+
+          {/* Manual input — only when no hardware */}
+          {!wsConnected && (
+            <div style={styles.inputRow}>
+              <input
+                ref={rfidRef}
+                type="text"
+                value={rfidInput}
+                onChange={e => { setRfidInput(e.target.value); setRfidError(''); }}
+                onKeyDown={e => e.key === 'Enter' && handleRfidSubmit()}
+                placeholder="RFID / Card Number"
+                style={styles.textInput}
+                autoComplete="off"
+              />
+              <button
+                onClick={handleRfidSubmit}
+                disabled={rfidBusy || !rfidInput.trim()}
+                style={{ ...styles.greenBtn, opacity: (rfidBusy || !rfidInput.trim()) ? 0.5 : 1 }}
+              >
+                {rfidBusy ? 'Checking…' : 'START'}
+              </button>
+            </div>
+          )}
+
+          {/* Error banner — shown prominently */}
+          {rfidError && (
+            <div style={styles.errorBannerLarge}>
+              <span style={{ fontSize: '24px', marginRight: '10px' }}>⚠️</span>
+              <span>{rfidError}</span>
+            </div>
+          )}
 
           {recentScans.length > 0 && (
             <div style={styles.recentBox}>
@@ -724,29 +750,47 @@ export default function StationPage() {
             <p style={{ color: '#f87171', marginTop: 12 }}>{result.error}</p>
           )}
 
-          <div style={styles.staffBox}>
-            <p style={styles.staffHeading}>STAFF — SCAN RFID TO RESET STATION</p>
-            <div style={styles.inputRow}>
-              <input
-                ref={staffRfidRef}
-                type="password"
-                value={staffRfid}
-                onChange={e => { setStaffRfid(e.target.value); setStaffError(''); }}
-                onKeyDown={e => e.key === 'Enter' && handleStaffRfid()}
-                placeholder="Staff RFID"
-                style={styles.textInput}
-                autoComplete="off"
-              />
-              <button
-                onClick={handleStaffRfid}
-                disabled={staffBusy || !staffRfid.trim()}
-                style={{ ...styles.greenBtn, opacity: (staffBusy || !staffRfid.trim()) ? 0.5 : 1 }}
-              >
-                {staffBusy ? '…' : 'RESET'}
-              </button>
+          {wsConnected ? (
+            // Hardware mode — staff scans card on the reader to reset
+            <div style={styles.staffBox}>
+              <p style={styles.staffHeading}>STAFF — SCAN YOUR RFID TAG TO RESET STATION</p>
+              <div style={styles.scanPulse}>
+                <div style={styles.scanIcon}>👮</div>
+                <p style={styles.scanText}>Waiting for staff card…</p>
+              </div>
+              {rfidError && (
+                <div style={{ ...styles.errorBannerLarge, marginTop: '12px' }}>
+                  <span style={{ fontSize: '20px', marginRight: '8px' }}>⚠️</span>
+                  <span>{rfidError}</span>
+                </div>
+              )}
             </div>
-            {staffError && <div style={styles.errorBanner}>{staffError}</div>}
-          </div>
+          ) : (
+            // Manual mode — staff enters RFID
+            <div style={styles.staffBox}>
+              <p style={styles.staffHeading}>STAFF — SCAN RFID TO RESET STATION</p>
+              <div style={styles.inputRow}>
+                <input
+                  ref={staffRfidRef}
+                  type="password"
+                  value={staffRfid}
+                  onChange={e => { setStaffRfid(e.target.value); setStaffError(''); }}
+                  onKeyDown={e => e.key === 'Enter' && handleStaffRfid()}
+                  placeholder="Staff RFID"
+                  style={styles.textInput}
+                  autoComplete="off"
+                />
+                <button
+                  onClick={handleStaffRfid}
+                  disabled={staffBusy || !staffRfid.trim()}
+                  style={{ ...styles.greenBtn, opacity: (staffBusy || !staffRfid.trim()) ? 0.5 : 1 }}
+                >
+                  {staffBusy ? '…' : 'RESET'}
+                </button>
+              </div>
+              {staffError && <div style={styles.errorBanner}>{staffError}</div>}
+            </div>
+          )}
         </div>
       )}
     </div>
@@ -830,6 +874,40 @@ const styles = {
     letterSpacing: '0.08em',
     backdropFilter: 'blur(8px)',
     textTransform: 'uppercase',
+  },
+  scanPulse: {
+    display: 'flex',
+    flexDirection: 'column',
+    alignItems: 'center',
+    gap: 8,
+    padding: '24px 0',
+  },
+  scanIcon: {
+    fontSize: 48,
+    animation: 'pulse 2s ease-in-out infinite',
+  },
+  scanText: {
+    color: 'rgba(255,255,255,0.5)',
+    fontSize: 14,
+    fontWeight: 600,
+    letterSpacing: '0.1em',
+    textTransform: 'uppercase',
+  },
+  errorBannerLarge: {
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    color: '#fca5a5',
+    fontSize: 16,
+    fontWeight: 600,
+    backgroundColor: 'rgba(239,68,68,0.2)',
+    border: '2px solid rgba(239,68,68,0.5)',
+    padding: '14px 20px',
+    borderRadius: 12,
+    width: '100%',
+    boxSizing: 'border-box',
+    textAlign: 'center',
+    backdropFilter: 'blur(8px)',
   },
   stateSubtitle: {
     color: 'rgba(255,255,255,0.72)',

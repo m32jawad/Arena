@@ -25,13 +25,12 @@ class BackendAPIClient:
         try:
             logger.debug(f"POST {url} - {data}")
             response = await self.client.post(url, json=data)
-            response.raise_for_status()
             result = response.json()
-            logger.debug(f"Response: {result}")
+            logger.debug(f"Response ({response.status_code}): {result}")
+            if response.status_code >= 400:
+                # Return the error response so callers can see error messages
+                return {'error': result.get('error', f'HTTP {response.status_code}'), '_status': response.status_code}
             return result
-        except httpx.HTTPStatusError as e:
-            logger.error(f"HTTP error {e.response.status_code}: {e.response.text}")
-            return None
         except Exception as e:
             logger.error(f"Request failed: {e}")
             return None
@@ -67,12 +66,16 @@ class BackendAPIClient:
         - remaining_seconds
         - storyline_title
         - storyline_hint
+        
+        Or error dict with 'error' key if failed.
         """
         result = await self._post('rfid/start/', {'rfid': rfid_tag})
-        if result:
+        if result and not result.get('error'):
             logger.info(f"✅ Session started for {rfid_tag}: {result.get('party_name')}")
+        elif result and result.get('error'):
+            logger.warning(f"❌ Start session error for {rfid_tag}: {result.get('error')}")
         else:
-            logger.warning(f"❌ Failed to start session for {rfid_tag}")
+            logger.warning(f"❌ Failed to start session for {rfid_tag} (no response)")
         return result
     
     async def stop_session(self, rfid_tag: str) -> Optional[Dict[str, Any]]:
@@ -129,7 +132,10 @@ class BackendAPIClient:
         Returns staff info if valid, None otherwise.
         """
         result = await self._post('rfid/check-staff/', {'rfid': rfid_tag})
-        return result
+        # Only return a truthy result if it's actually a staff member
+        if result and result.get('is_staff'):
+            return result
+        return None
     
     async def get_station_recent_scans(self, station_ip: str, limit: int = 10) -> Optional[list]:
         """Get recent RFID scans for a station.
@@ -155,3 +161,20 @@ class BackendAPIClient:
         """Get public leaderboard."""
         result = await self._get('public/leaderboard/')
         return result if result else []
+    
+    # ========================================================================
+    # Health Reporting
+    # ========================================================================
+    
+    async def update_controller_metrics(self, ip_address: str, metrics: Dict[str, str]) -> Optional[Dict[str, Any]]:
+        """Report station health metrics to the backend.
+        
+        The backend matches the controller by IP address and updates
+        the metrics fields (cpu_usage, ram_usage, storage_usage, etc.)
+        """
+        data = {
+            'ip_address': ip_address,
+            **metrics
+        }
+        result = await self._post('controllers/health/', data)
+        return result

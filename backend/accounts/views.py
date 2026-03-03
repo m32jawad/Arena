@@ -506,6 +506,58 @@ def controller_detail(request, pk):
         return Response({'message': 'Controller deleted.'}, status=status.HTTP_204_NO_CONTENT)
 
 
+@api_view(['POST'])
+@permission_classes([AllowAny])
+def controller_health_update(request):
+    """Update controller health metrics.
+
+    Called periodically by station hardware to report system metrics.
+    Matches controller by IP address.
+
+    Body: {
+        "ip_address": "192.168.1.x",
+        "cpu_usage": "45%",
+        "ram_usage": "62% (512MB / 1024MB)",
+        "storage_usage": "35% (4GB / 16GB)",
+        "cpu_temperature": "52.3°C",
+        "system_uptime": "2d 5h 30m",
+        "voltage_power_status": "OK (no throttling)"
+    }
+    """
+    ip_address = request.data.get('ip_address', '').strip()
+    if not ip_address:
+        return Response({'error': 'ip_address is required.'}, status=status.HTTP_400_BAD_REQUEST)
+
+    try:
+        controller = Controller.objects.get(ip_address=ip_address)
+    except Controller.DoesNotExist:
+        return Response(
+            {'error': f'No controller found with IP {ip_address}.'},
+            status=status.HTTP_404_NOT_FOUND
+        )
+
+    # Update all provided metric fields
+    metric_fields = [
+        'cpu_usage', 'storage_usage', 'cpu_temperature',
+        'ram_usage', 'system_uptime', 'voltage_power_status'
+    ]
+    updated = []
+    for field in metric_fields:
+        value = request.data.get(field)
+        if value is not None:
+            setattr(controller, field, str(value))
+            updated.append(field)
+
+    if updated:
+        controller.save(update_fields=updated + ['updated_at'])
+
+    return Response({
+        'message': 'Health metrics updated.',
+        'controller': controller.name,
+        'updated_fields': updated,
+    })
+
+
 def controller_test_page(request):
     from django.shortcuts import render
     return render(request, 'controller_test.html')

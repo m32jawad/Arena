@@ -211,6 +211,14 @@ class PendingSignup(models.Model):
 class Controller(models.Model):
     name = models.CharField(max_length=255)
     ip_address = models.GenericIPAddressField()
+    station_host = models.CharField(
+        max_length=255, blank=True, default='',
+        help_text='Station hardware WebSocket host (defaults to ip_address if empty)',
+    )
+    station_port = models.PositiveIntegerField(
+        default=8001,
+        help_text='Station hardware WebSocket port',
+    )
     cpu_usage = models.CharField(max_length=50, blank=True, default='')
     storage_usage = models.CharField(max_length=100, blank=True, default='')
     cpu_temperature = models.CharField(max_length=50, blank=True, default='')

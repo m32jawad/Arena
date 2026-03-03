@@ -69,6 +69,13 @@ export default function StationPage() {
   const [selectedCtrl,      setSelectedCtrl]      = useState(null);
   const [recentScans,       setRecentScans]       = useState([]);
 
+  // WebSocket connection
+  const [wsConnected,       setWsConnected]       = useState(false);
+  const [stationStatus,     setStationStatus]     = useState(null);
+  const [lastHealthCheck,   setLastHealthCheck]   = useState(null);
+  const wsRef = useRef(null);
+  const healthCheckTimerRef = useRef(null);
+
   // READY
   const [rfidInput,  setRfidInput]  = useState('');
   const [rfidError,  setRfidError]  = useState('');
@@ -126,6 +133,63 @@ export default function StationPage() {
     }
   }, [stationId, controllers]);
 
+  // ── monitor station health (mark stale after 30s) ───────────
+  useEffect(() => {
+    if (!wsConnected || !lastHealthCheck) return;
+    
+    const checkHealth = setInterval(() => {
+      const now = new Date();
+      const elapsed = (now - lastHealthCheck) / 1000; // seconds
+      
+      // If no response in 30 seconds, consider connection unhealthy
+      if (elapsed > 30) {
+        console.warn('⚠️ Station health check timeout - no response in 30s');
+        // Could optionally set a flag here to show warning
+      }
+    }, 5000); // Check every 5 seconds
+    
+    return () => clearInterval(checkHealth);
+  }, [wsConnected, lastHealthCheck]);
+
+  // ── HTTP fallback: poll station health when WebSocket is down ───────
+  useEffect(() => {
+    if (wsConnected || !selectedCtrl) return;
+    
+    // Fallback: try HTTP health check every 15 seconds
+    const pollStationHealth = async () => {
+      try {
+        const stationHost = selectedCtrl.ip_address || window.location.hostname;
+        const stationPort = 8001;
+        const response = await fetch(`http://${stationHost}:${stationPort}/health`, {
+          timeout: 3000,
+        });
+        
+        if (response.ok) {
+          const data = await response.json();
+          console.log('📡 Station health (HTTP):', data);
+          // Get full status
+          const statusResponse = await fetch(`http://${stationHost}:${stationPort}/`);
+          if (statusResponse.ok) {
+            const statusData = await statusResponse.json();
+            setStationStatus({
+              station_id: statusData.station_id,
+              station_name: statusData.station_name,
+              hardware_mode: statusData.hardware_mode,
+              has_active_session: statusData.has_active_session,
+            });
+            setLastHealthCheck(new Date());
+          }
+        }
+      } catch (err) {
+        console.log('❌ HTTP health check failed:', err.message);
+      }
+    };
+    
+    pollStationHealth(); // Initial check
+    const interval = setInterval(pollStationHealth, 15000);
+    return () => clearInterval(interval);
+  }, [wsConnected, selectedCtrl]);
+
   // ── poll recent scans while READY ───────────
   const fetchRecent = useCallback(() => {
     if (!selectedCtrl) return;
@@ -159,6 +223,193 @@ export default function StationPage() {
     }, 1000);
     return () => clearInterval(countdownRef.current);
   }, [appState]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ── WebSocket connection to station hardware ────────────────────────
+  useEffect(() => {
+    if (!selectedCtrl) return;
+
+    // Connect to station hardware WebSocket
+    // Station runs on port 8001 by default
+    const stationHost = selectedCtrl.ip_address || window.location.hostname;
+    const stationPort = 8001;
+    const wsUrl = `ws://${stationHost}:${stationPort}/ws`;
+
+    console.log(`🔌 Connecting to station WebSocket: ${wsUrl}`);
+
+    let ws = null;
+    let reconnectTimeout = null;
+    let heartbeatInterval = null;
+
+    const connect = () => {
+      try {
+        ws = new WebSocket(wsUrl);
+        wsRef.current = ws;
+
+        ws.onopen = () => {
+          console.log('✅ Connected to station hardware');
+          setWsConnected(true);
+          if (appState === STATES.OFFLINE) {
+            setAppState(STATES.READY);
+          }
+
+          // Send heartbeat and status check every 10 seconds
+          heartbeatInterval = setInterval(() => {
+            if (ws && ws.readyState === WebSocket.OPEN) {
+              ws.send(JSON.stringify({ type: 'ping' }));
+              ws.send(JSON.stringify({ type: 'get_status' }));
+            }
+          }, 10000);
+        };
+
+        ws.onmessage = (event) => {
+          try {
+            const data = JSON.parse(event.data);
+            console.log('📨 Station message:', data);
+
+            switch (data.type) {
+              case 'connection':
+                // Initial connection - check if there's an active session
+                setStationStatus({
+                  station_id: data.station_id,
+                  station_name: data.station_name,
+                  hardware_mode: data.hardware_mode,
+                  has_active_session: data.current_session ? true : false,
+                });
+                setLastHealthCheck(new Date());
+                if (data.current_session) {
+                  // Resume active session
+                  const sess = data.current_session;
+                  setSession({
+                    id: sess.session_id,
+                    party_name: sess.party_name,
+                    rfid_tag: sess.rfid_tag,
+                    session_minutes: sess.session_minutes,
+                  });
+                  setCountdown(sess.remaining_seconds || 0);
+                  setStorylineHint(sess.storyline_hint || '');
+                  setAppState(STATES.ACTIVE);
+                }
+                break;
+
+              case 'session_started':
+                // Hardware detected RFID scan and started session
+                const startSess = data.session;
+                setSession({
+                  id: startSess.session_id,
+                  party_name: startSess.party_name,
+                  rfid_tag: startSess.rfid_tag,
+                  session_minutes: startSess.session_minutes,
+                });
+                setCountdown(startSess.remaining_seconds || startSess.session_minutes * 60);
+                setStorylineHint(startSess.storyline_hint || '');
+                setAppState(STATES.ACTIVE);
+                setRfidInput('');
+                setRfidError('');
+                setShowHint(false);
+                break;
+
+              case 'session_ended':
+                // Session ended (stop button pressed or staff scan)
+                const endResult = data.result;
+                setResult({
+                  party_name: endResult.party_name,
+                  points: endResult.total_points,
+                  elapsed_seconds: endResult.elapsed_seconds,
+                });
+                setAppState(STATES.RESULT);
+                setSession(null);
+                setShowHint(false);
+                clearInterval(countdownRef.current);
+                break;
+
+              case 'button_press':
+                // Hardware button pressed
+                if (data.button === 'hint') {
+                  if (data.hint) {
+                    setStorylineHint(data.hint);
+                  }
+                  setShowHint(true);
+                  // Auto-hide hint after 10 seconds
+                  setTimeout(() => setShowHint(false), 10000);
+                } else if (data.button === 'stop') {
+                  console.log('Stop button pressed on hardware');
+                }
+                break;
+
+              case 'error':
+                setRfidError(data.message || 'Station error');
+                setTimeout(() => setRfidError(''), 5000);
+                break;
+
+              case 'pong':
+                // Heartbeat response
+                setLastHealthCheck(new Date());
+                break;
+
+              case 'status':
+                // Status update response
+                setStationStatus({
+                  station_id: data.station_id,
+                  station_name: data.station_name,
+                  hardware_mode: data.hardware_mode,
+                  has_active_session: data.current_session ? true : false,
+                });
+                setLastHealthCheck(new Date());
+                break;
+
+              default:
+                console.log('Unknown message type:', data.type);
+                break;
+            }
+          } catch (err) {
+            console.error('❌ Error parsing station message:', err);
+          }
+        };
+
+        ws.onerror = (error) => {
+          console.error('❌ WebSocket error:', error);
+        };
+
+        ws.onclose = () => {
+          console.log('🔌 Disconnected from station hardware');
+          setWsConnected(false);
+          if (appState !== STATES.OFFLINE) {
+            // Only set to offline if we're not already there
+            // Keep current state but show disconnected indicator
+          }
+          wsRef.current = null;
+
+          // Clear heartbeat
+          if (heartbeatInterval) {
+            clearInterval(heartbeatInterval);
+          }
+
+          // Try to reconnect after 5 seconds
+          reconnectTimeout = setTimeout(() => {
+            console.log('🔄 Attempting to reconnect...');
+            connect();
+          }, 5000);
+        };
+      } catch (err) {
+        console.error('❌ Failed to create WebSocket:', err);
+        setWsConnected(false);
+      }
+    };
+
+    connect();
+
+    return () => {
+      if (reconnectTimeout) clearTimeout(reconnectTimeout);
+      if (heartbeatInterval) clearInterval(heartbeatInterval);
+      if (ws && ws.readyState === WebSocket.OPEN) {
+        ws.close();
+      }
+      wsRef.current = null;
+      setWsConnected(false);
+      setStationStatus(null);
+      setLastHealthCheck(null);
+    };
+  }, [selectedCtrl, appState]);
 
   // ── helpers ──────────────────────────────────
   async function doStop(sess) {
@@ -297,27 +548,68 @@ export default function StationPage() {
       {appState === STATES.READY && (
         <div style={styles.centerPanel}>
           <h1 style={styles.stateTitle}>READY</h1>
-          <p  style={styles.stateSubtitle}>Scan or enter your RFID tag to begin</p>
-
-          <div style={styles.inputRow}>
-            <input
-              ref={rfidRef}
-              type="text"
-              value={rfidInput}
-              onChange={e => { setRfidInput(e.target.value); setRfidError(''); }}
-              onKeyDown={e => e.key === 'Enter' && handleRfidSubmit()}
-              placeholder="RFID / Card Number"
-              style={styles.textInput}
-              autoComplete="off"
-            />
-            <button
-              onClick={handleRfidSubmit}
-              disabled={rfidBusy || !rfidInput.trim()}
-              style={{ ...styles.greenBtn, opacity: (rfidBusy || !rfidInput.trim()) ? 0.5 : 1 }}
-            >
-              {rfidBusy ? 'Checking…' : 'START'}
-            </button>
+          
+          {/* Station health status indicator */}
+          <div style={styles.statusPanel}>
+            <div style={{
+              ...styles.statusIndicator,
+              backgroundColor: wsConnected ? 'rgba(0, 255, 0, 0.2)' : 'rgba(255, 165, 0, 0.2)',
+              borderColor: wsConnected ? '#00ff00' : '#ffa500',
+            }}>
+              <span style={{ fontSize: '18px', marginRight: '8px' }}>
+                {wsConnected ? '●' : '○'}
+              </span>
+              <div style={{ flex: 1 }}>
+                <div style={{ fontWeight: 'bold', marginBottom: '4px' }}>
+                  {wsConnected ? 'Hardware Connected' : 'Manual Mode'}
+                </div>
+                {stationStatus && wsConnected && (
+                  <div style={{ fontSize: '0.85rem', opacity: 0.8 }}>
+                    {stationStatus.hardware_mode === 'simulated' ? '🧪 Simulation Mode' : '⚙️ Real Hardware'}
+                    {lastHealthCheck && (
+                      <span style={{ marginLeft: '12px' }}>
+                        Last: {lastHealthCheck.toLocaleTimeString()}
+                      </span>
+                    )}
+                  </div>
+                )}
+              </div>
+            </div>
           </div>
+
+          {wsConnected ? (
+            // Hardware mode - show waiting message
+            <>
+              <p style={styles.stateSubtitle}>Scan your RFID tag on the hardware reader to begin</p>
+              <p style={{ ...styles.stateSubtitle, fontSize: '1rem', marginTop: '20px', color: '#00ff00' }}>
+                NFC Reader Active • Press STOP to end session • Press HINT for clues
+              </p>
+            </>
+          ) : (
+            // Manual mode - show input form
+            <>
+              <p style={styles.stateSubtitle}>Scan or enter your RFID tag to begin</p>
+              <div style={styles.inputRow}>
+                <input
+                  ref={rfidRef}
+                  type="text"
+                  value={rfidInput}
+                  onChange={e => { setRfidInput(e.target.value); setRfidError(''); }}
+                  onKeyDown={e => e.key === 'Enter' && handleRfidSubmit()}
+                  placeholder="RFID / Card Number"
+                  style={styles.textInput}
+                  autoComplete="off"
+                />
+                <button
+                  onClick={handleRfidSubmit}
+                  disabled={rfidBusy || !rfidInput.trim()}
+                  style={{ ...styles.greenBtn, opacity: (rfidBusy || !rfidInput.trim()) ? 0.5 : 1 }}
+                >
+                  {rfidBusy ? 'Checking…' : 'START'}
+                </button>
+              </div>
+            </>
+          )}
           {rfidError && <div style={styles.errorBanner}>{rfidError}</div>}
 
           {recentScans.length > 0 && (
@@ -491,6 +783,22 @@ const styles = {
     letterSpacing: '0.18em',
     margin: 0,
     textShadow: '0 2px 24px rgba(0,0,0,0.7)',
+  },
+  statusPanel: {
+    width: '100%',
+    marginBottom: 16,
+  },
+  statusIndicator: {
+    display: 'flex',
+    alignItems: 'center',
+    padding: '12px 18px',
+    borderRadius: 12,
+    border: '2px solid',
+    fontSize: '14px',
+    fontWeight: 700,
+    letterSpacing: '0.08em',
+    backdropFilter: 'blur(8px)',
+    textTransform: 'uppercase',
   },
   stateSubtitle: {
     color: 'rgba(255,255,255,0.72)',

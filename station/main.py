@@ -64,18 +64,24 @@ class StationState:
     async def broadcast(self, message: Dict[str, Any]):
         """Broadcast a message to all connected WebSocket clients."""
         if not self.websocket_clients:
+            logger.debug(f"⚠️ No WebSocket clients to broadcast to")
             return
+        
+        logger.info(f"📢 Broadcasting to {len(self.websocket_clients)} clients: {message.get('type')}")
         
         disconnected = []
         for client in self.websocket_clients:
             try:
                 await client.send_json(message)
-            except:
+                logger.debug(f"✅ Sent to client: {message}")
+            except Exception as e:
+                logger.warning(f"❌ Failed to send to client: {e}")
                 disconnected.append(client)
         
         # Remove disconnected clients
         for client in disconnected:
             self.websocket_clients.remove(client)
+            logger.info(f"🔌 Removed disconnected client (remaining: {len(self.websocket_clients)})")
 
 state = StationState()
 
@@ -406,12 +412,16 @@ async def websocket_endpoint(websocket: WebSocket):
     logger.info(f"🔌 WebSocket client connected (total: {len(state.websocket_clients)})")
     
     # Send current state
-    await websocket.send_json({
+    connection_msg = {
         'type': 'connection',
         'station_id': settings.station_id,
         'station_name': settings.station_name,
+        'hardware_mode': 'simulated' if settings.simulate_hardware else 'real',
+        'has_active_session': state.current_session is not None,
         'current_session': state.current_session
-    })
+    }
+    logger.info(f"📤 Sending connection message: {connection_msg}")
+    await websocket.send_json(connection_msg)
     
     try:
         # Keep connection alive and handle incoming messages
@@ -423,10 +433,16 @@ async def websocket_endpoint(websocket: WebSocket):
                 await websocket.send_json({'type': 'pong'})
             
             elif data.get('type') == 'get_status':
-                await websocket.send_json({
+                status_msg = {
                     'type': 'status',
+                    'station_id': settings.station_id,
+                    'station_name': settings.station_name,
+                    'hardware_mode': 'simulated' if settings.simulate_hardware else 'real',
+                    'has_active_session': state.current_session is not None,
                     'current_session': state.current_session
-                })
+                }
+                logger.debug(f"📤 Sending status: {status_msg}")
+                await websocket.send_json(status_msg)
     
     except WebSocketDisconnect:
         logger.info("🔌 WebSocket client disconnected")

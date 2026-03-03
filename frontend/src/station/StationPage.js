@@ -242,11 +242,13 @@ export default function StationPage() {
 
     const connect = () => {
       try {
+        console.log(`🔌 Creating WebSocket connection to: ${wsUrl}`);
         ws = new WebSocket(wsUrl);
         wsRef.current = ws;
 
         ws.onopen = () => {
           console.log('✅ Connected to station hardware');
+          console.log('✅ WebSocket readyState:', ws.readyState);
           setWsConnected(true);
           if (appState === STATES.OFFLINE) {
             setAppState(STATES.READY);
@@ -255,8 +257,11 @@ export default function StationPage() {
           // Send heartbeat and status check every 10 seconds
           heartbeatInterval = setInterval(() => {
             if (ws && ws.readyState === WebSocket.OPEN) {
+              console.log('💓 Sending ping and get_status');
               ws.send(JSON.stringify({ type: 'ping' }));
               ws.send(JSON.stringify({ type: 'get_status' }));
+            } else {
+              console.log('⚠️ WebSocket not open, readyState:', ws?.readyState);
             }
           }, 10000);
         };
@@ -265,10 +270,13 @@ export default function StationPage() {
           try {
             const data = JSON.parse(event.data);
             console.log('📨 Station message:', data);
+            console.log('📨 Message type:', data.type);
+            console.log('📨 Full message:', JSON.stringify(data, null, 2));
 
             switch (data.type) {
               case 'connection':
                 // Initial connection - check if there's an active session
+                console.log('🔌 Connection message received');
                 setStationStatus({
                   station_id: data.station_id,
                   station_name: data.station_name,
@@ -276,8 +284,15 @@ export default function StationPage() {
                   has_active_session: data.current_session ? true : false,
                 });
                 setLastHealthCheck(new Date());
+                console.log('🔌 Station status:', {
+                  station_id: data.station_id,
+                  station_name: data.station_name,
+                  hardware_mode: data.hardware_mode,
+                  has_active_session: data.current_session ? true : false,
+                });
                 if (data.current_session) {
                   // Resume active session
+                  console.log('🔄 Resuming active session');
                   const sess = data.current_session;
                   setSession({
                     id: sess.session_id,
@@ -293,7 +308,9 @@ export default function StationPage() {
 
               case 'session_started':
                 // Hardware detected RFID scan and started session
+                console.log('🎮 Session started event received');
                 const startSess = data.session;
+                console.log('🎮 Session data:', startSess);
                 setSession({
                   id: startSess.session_id,
                   party_name: startSess.party_name,
@@ -306,11 +323,14 @@ export default function StationPage() {
                 setRfidInput('');
                 setRfidError('');
                 setShowHint(false);
+                console.log('🎮 State changed to ACTIVE');
                 break;
 
               case 'session_ended':
                 // Session ended (stop button pressed or staff scan)
+                console.log('🏁 Session ended event received');
                 const endResult = data.result;
+                console.log('🏁 Result data:', endResult);
                 setResult({
                   party_name: endResult.party_name,
                   points: endResult.total_points,
@@ -320,34 +340,40 @@ export default function StationPage() {
                 setSession(null);
                 setShowHint(false);
                 clearInterval(countdownRef.current);
+                console.log('🏁 State changed to RESULT');
                 break;
 
               case 'button_press':
                 // Hardware button pressed
+                console.log('🔘 Button press event received:', data.button);
                 if (data.button === 'hint') {
                   if (data.hint) {
+                    console.log('💡 Setting hint:', data.hint);
                     setStorylineHint(data.hint);
                   }
                   setShowHint(true);
                   // Auto-hide hint after 10 seconds
                   setTimeout(() => setShowHint(false), 10000);
                 } else if (data.button === 'stop') {
-                  console.log('Stop button pressed on hardware');
+                  console.log('🛑 Stop button pressed on hardware');
                 }
                 break;
 
               case 'error':
+                console.log('❌ Error received:', data.message);
                 setRfidError(data.message || 'Station error');
                 setTimeout(() => setRfidError(''), 5000);
                 break;
 
               case 'pong':
                 // Heartbeat response
+                console.log('💓 Pong received');
                 setLastHealthCheck(new Date());
                 break;
 
               case 'status':
                 // Status update response
+                console.log('📊 Status update received');
                 setStationStatus({
                   station_id: data.station_id,
                   station_name: data.station_name,
@@ -355,6 +381,11 @@ export default function StationPage() {
                   has_active_session: data.current_session ? true : false,
                 });
                 setLastHealthCheck(new Date());
+                console.log('📊 Updated status:', {
+                  station_id: data.station_id,
+                  station_name: data.station_name,
+                  hardware_mode: data.hardware_mode,
+                });
                 break;
 
               default:

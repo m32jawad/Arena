@@ -1,4 +1,5 @@
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback, useRef } from "react";
+import { motion, AnimatePresence, useMotionValue, useTransform, animate } from "framer-motion";
 
 // Automatically detect host IP/hostname for the backend API
 const defaultApiBase = `http://${window.location.hostname}:8000/api/auth`;
@@ -141,6 +142,40 @@ const LivePulse = () => (
   </span>
 );
 
+/* ─── RollingNumber: count-up animation on score increase ─── */
+const RollingNumber = ({ value, className, style }) => {
+  const motionVal = useMotionValue(value);
+  const rounded = useTransform(motionVal, (v) => Math.round(v).toLocaleString());
+  const prevRef = useRef(value);
+  const [display, setDisplay] = useState(value.toLocaleString());
+
+  useEffect(() => {
+    const unsubscribe = rounded.onChange((v) => setDisplay(v));
+    return unsubscribe;
+  }, [rounded]);
+
+  useEffect(() => {
+    if (value !== prevRef.current) {
+      // Only animate upward (score increase)
+      if (value > prevRef.current) {
+        const controls = animate(motionVal, value, {
+          duration: 1.2,
+          ease: [0.22, 1, 0.36, 1],
+        });
+        prevRef.current = value;
+        return () => controls.stop();
+      } else {
+        // Score reset or decreased — jump immediately
+        motionVal.set(value);
+        setDisplay(value.toLocaleString());
+        prevRef.current = value;
+      }
+    }
+  }, [value, motionVal]);
+
+  return <span className={className} style={style}>{display}</span>;
+};
+
 const VideoBg = () => (
   <>
     <video
@@ -164,13 +199,31 @@ export default function LeaderboardPage() {
   const [teams, setTeams] = useState([]);
   const [controllers, setControllers] = useState([]);
   const [loading, setLoading] = useState(true);
+  // Track which team IDs recently gained points for the glow flash
+  const [scoredIds, setScoredIds] = useState(new Set());
+  const prevScoresRef = useRef({});
 
   const fetchData = useCallback(() => {
     Promise.all([
       fetch(`${API_BASE}/public/leaderboard/`).then((r) => r.json()).catch(() => []),
       fetch(`${API_BASE}/public/controllers/`).then((r) => r.json()).catch(() => []),
     ]).then(([leaderboardData, controllerData]) => {
-      if (Array.isArray(leaderboardData)) setTeams(leaderboardData);
+      if (Array.isArray(leaderboardData)) {
+        // Detect score increases
+        const newlyScored = new Set();
+        leaderboardData.forEach((team) => {
+          const prev = prevScoresRef.current[team.id];
+          if (prev !== undefined && team.points > prev) {
+            newlyScored.add(team.id);
+          }
+          prevScoresRef.current[team.id] = team.points;
+        });
+        if (newlyScored.size > 0) {
+          setScoredIds(newlyScored);
+          setTimeout(() => setScoredIds(new Set()), 2000);
+        }
+        setTeams(leaderboardData);
+      }
       if (Array.isArray(controllerData)) setControllers(controllerData);
       setLoading(false);
     });
@@ -225,76 +278,115 @@ export default function LeaderboardPage() {
         LEADERBOARD
       </h1>
 
-      <div className="w-full max-w-[500px] flex flex-col gap-3">
-        {/* ─── 1st Place Card ─── */}
-        {firstTeam && (
-          <div
-            className="rounded-xl p-5 mb-2"
-            style={{
-              background: "rgba(255,255,255,0.08)",
-              border: "1px solid rgba(255,255,255,0.15)",
-            }}
-          >
-            <div className="flex items-center gap-4">
-              <GroupAvatars team={firstTeam} size={70} />
-              <div className="flex flex-col gap-1.5">
-                <div className="flex items-center">
-                  <span className="text-white text-xl font-bold">{firstTeam.name}</span>
-                  {firstTeam.session_status === "live" && <LivePulse />}
+      <motion.div layout className="w-full max-w-[500px] flex flex-col gap-3">
+        <AnimatePresence mode="popLayout">
+          {/* ─── 1st Place Card ─── */}
+          {firstTeam && (
+            <motion.div
+              key={firstTeam.id}
+              layout
+              layoutId={`team-${firstTeam.id}`}
+              initial={{ opacity: 0, y: -40 }}
+              animate={{
+                opacity: 1,
+                y: 0,
+                boxShadow: scoredIds.has(firstTeam.id)
+                  ? [
+                      "0 0 0px rgba(217,70,239,0)",
+                      "0 0 32px rgba(217,70,239,0.9)",
+                      "0 0 16px rgba(217,70,239,0.5)",
+                      "0 0 0px rgba(217,70,239,0)",
+                    ]
+                  : "0 0 0px rgba(217,70,239,0)",
+              }}
+              exit={{ opacity: 0, y: 40 }}
+              transition={{ layout: { type: "spring", stiffness: 500, damping: 35 }, duration: 0.5 }}
+              className="rounded-xl p-5 mb-2"
+              style={{
+                background: "rgba(255,255,255,0.08)",
+                border: "1px solid rgba(255,255,255,0.15)",
+              }}
+            >
+              <div className="flex items-center gap-4">
+                <GroupAvatars team={firstTeam} size={70} />
+                <div className="flex flex-col gap-1.5">
+                  <div className="flex items-center">
+                    <span className="text-white text-xl font-bold">{firstTeam.name}</span>
+                    {firstTeam.session_status === "live" && <LivePulse />}
+                  </div>
+                  {/* Controller circles = checkpoints */}
+                  <ControllerCircles
+                    controllers={controllers}
+                    clearedIds={getClearedIds(firstTeam)}
+                  />
+                  <RollingNumber
+                    value={firstTeam.points || 0}
+                    className="text-white text-lg font-bold mt-0.5"
+                  />
                 </div>
-                {/* Controller circles = checkpoints */}
+              </div>
+            </motion.div>
+          )}
+
+          {/* ─── Other Teams ─── */}
+          {otherTeams.map((team, idx) => (
+            <motion.div
+              key={team.id}
+              layout
+              layoutId={`team-${team.id}`}
+              initial={{ opacity: 0, y: -40 }}
+              animate={{
+                opacity: 1,
+                y: 0,
+                boxShadow: scoredIds.has(team.id)
+                  ? [
+                      "0 0 0px rgba(217,70,239,0)",
+                      "0 0 28px rgba(217,70,239,0.85)",
+                      "0 0 14px rgba(217,70,239,0.5)",
+                      "0 0 0px rgba(217,70,239,0)",
+                    ]
+                  : "0 0 0px rgba(217,70,239,0)",
+              }}
+              exit={{ opacity: 0, y: 40 }}
+              transition={{ layout: { type: "spring", stiffness: 500, damping: 35 }, duration: 0.5 }}
+              className="rounded-xl px-4 py-3 flex items-center gap-4"
+              style={{
+                background:
+                  idx % 2 === 0
+                    ? "rgba(140, 60, 180, 0.25)"
+                    : "rgba(120, 50, 160, 0.18)",
+                border: "1px solid rgba(255,255,255,0.08)",
+              }}
+            >
+              {/* Avatar */}
+              <div
+                className="rounded-full overflow-hidden flex-shrink-0"
+                style={{ border: "3px solid #F39C12", width: 50, height: 50 }}
+              >
+                <TeamAvatar team={team} size={44} />
+              </div>
+
+              {/* Name + Controller Circles */}
+              <div className="flex-1 flex flex-col gap-1.5">
+                <div className="flex items-center">
+                  <span className="text-white text-base font-semibold">{team.name}</span>
+                  {team.session_status === "live" && <LivePulse />}
+                </div>
                 <ControllerCircles
                   controllers={controllers}
-                  clearedIds={getClearedIds(firstTeam)}
+                  clearedIds={getClearedIds(team)}
                 />
-                <span className="text-white text-lg font-bold mt-0.5">
-                  {(firstTeam.points || 0).toLocaleString()}
-                </span>
               </div>
-            </div>
-          </div>
-        )}
 
-        {/* ─── Other Teams ─── */}
-        {otherTeams.map((team, idx) => (
-          <div
-            key={team.id}
-            className="rounded-xl px-4 py-3 flex items-center gap-4"
-            style={{
-              background:
-                idx % 2 === 0
-                  ? "rgba(140, 60, 180, 0.25)"
-                  : "rgba(120, 50, 160, 0.18)",
-              border: "1px solid rgba(255,255,255,0.08)",
-            }}
-          >
-            {/* Avatar */}
-            <div
-              className="rounded-full overflow-hidden flex-shrink-0"
-              style={{ border: "3px solid #F39C12", width: 50, height: 50 }}
-            >
-              <TeamAvatar team={team} size={44} />
-            </div>
-
-            {/* Name + Controller Circles */}
-            <div className="flex-1 flex flex-col gap-1.5">
-              <div className="flex items-center">
-                <span className="text-white text-base font-semibold">{team.name}</span>
-                {team.session_status === "live" && <LivePulse />}
-              </div>
-              <ControllerCircles
-                controllers={controllers}
-                clearedIds={getClearedIds(team)}
+              {/* Points */}
+              <RollingNumber
+                value={team.points || 0}
+                className="text-white text-lg font-bold flex-shrink-0"
               />
-            </div>
-
-            {/* Points */}
-            <span className="text-white text-lg font-bold flex-shrink-0">
-              {(team.points || 0).toLocaleString()}
-            </span>
-          </div>
-        ))}
-      </div>
+            </motion.div>
+          ))}
+        </AnimatePresence>
+      </motion.div>
     </div>
   );
 }

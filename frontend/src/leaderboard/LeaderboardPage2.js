@@ -1,4 +1,5 @@
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback, useRef } from "react";
+import { motion, AnimatePresence, useMotionValue, useTransform, animate } from "framer-motion";
 
 const defaultApiBase = `http://${window.location.hostname}:8000/api/auth`;
 const API_BASE = process.env.REACT_APP_API_BASE || defaultApiBase;
@@ -84,6 +85,38 @@ const PositionRibbon = ({ label }) => (
   </div>
 );
 
+/* ─── RollingNumber: count-up animation on score increase ─── */
+const RollingNumber = ({ value, className, style }) => {
+  const motionVal = useMotionValue(value);
+  const rounded = useTransform(motionVal, (v) => Math.round(v).toLocaleString());
+  const prevRef = useRef(value);
+  const [display, setDisplay] = useState(value.toLocaleString());
+
+  useEffect(() => {
+    const unsubscribe = rounded.onChange((v) => setDisplay(v));
+    return unsubscribe;
+  }, [rounded]);
+
+  useEffect(() => {
+    if (value !== prevRef.current) {
+      if (value > prevRef.current) {
+        const controls = animate(motionVal, value, {
+          duration: 1.2,
+          ease: [0.22, 1, 0.36, 1],
+        });
+        prevRef.current = value;
+        return () => controls.stop();
+      } else {
+        motionVal.set(value);
+        setDisplay(value.toLocaleString());
+        prevRef.current = value;
+      }
+    }
+  }, [value, motionVal]);
+
+  return <span className={className} style={style}>{display}</span>;
+};
+
 /* ─── Live Pulse Indicator ─── */
 const LivePulse = () => (
   <span className="relative flex h-2.5 w-2.5 ml-2">
@@ -114,12 +147,26 @@ const VideoBg = () => (
 export default function LeaderboardPage2() {
   const [teams, setTeams] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [scoredIds, setScoredIds] = useState(new Set());
+  const prevScoresRef = useRef({});
 
   const fetchLeaderboard = useCallback(() => {
     fetch(`${API_BASE}/public/leaderboard/`)
       .then((res) => res.json())
       .then((data) => {
         if (Array.isArray(data) && data.length > 0) {
+          const newlyScored = new Set();
+          data.forEach((team) => {
+            const prev = prevScoresRef.current[team.id];
+            if (prev !== undefined && team.points > prev) {
+              newlyScored.add(team.id);
+            }
+            prevScoresRef.current[team.id] = team.points;
+          });
+          if (newlyScored.size > 0) {
+            setScoredIds(newlyScored);
+            setTimeout(() => setScoredIds(new Set()), 2000);
+          }
           setTeams(data);
         }
       })
@@ -173,121 +220,165 @@ export default function LeaderboardPage2() {
         LEADERBOARD
       </h1>
 
-      <div className="w-full max-w-[600px] flex flex-col gap-4">
+      <motion.div layout className="w-full max-w-[600px] flex flex-col gap-4">
         {/* ─── Top 3 Cards ─── */}
         {topThree.length > 0 && (
-          <div className={`grid gap-3 mb-3`} style={{ gridTemplateColumns: `repeat(${Math.min(topThree.length, 3)}, 1fr)` }}>
-            {topThree.map((team, idx) => (
-              <div
-                key={team.id}
-                className="relative rounded-xl p-4 flex flex-col items-center text-center overflow-hidden"
-                style={{
-                  background: "rgba(255,255,255,0.08)",
-                  border: "1px solid rgba(255,255,255,0.15)",
-                }}
-              >
-                {/* Position Ribbon */}
-                <PositionRibbon label={positionLabels[idx]} />
-
-                {/* Avatar */}
-                <div className="mt-2 mb-2">
-                  <div
-                    className="rounded-full overflow-hidden"
-                    style={{ border: "3px solid #F39C12" }}
-                  >
-                    <TeamAvatar team={team} size={56} />
-                  </div>
-                </div>
-
-                {/* Team Name + Live indicator */}
-                <div className="flex items-center justify-center">
-                  <span className="text-white text-base font-bold">{team.name}</span>
-                  {team.session_status === "live" && <LivePulse />}
-                </div>
-
-                {/* Storyline / team size */}
-                <span className="text-white/50 text-xs mt-0.5">
-                  {team.storyline_title || `Team of ${team.team_size}`}
-                </span>
-
-                {/* Checkpoints */}
-                <div className="flex items-center gap-1 mt-2">
-                  {Array.from({ length: team.total_controllers || 0 }).map((_, i) => (
-                    <div
-                      key={i}
-                      className="w-2.5 h-2.5 rounded-full"
-                      style={{
-                        backgroundColor: i < (team.checkpoints_cleared || 0) ? "#D946EF" : "transparent",
-                        border: i < (team.checkpoints_cleared || 0) ? "none" : "1.5px solid rgba(217, 70, 239, 0.5)",
-                      }}
-                    />
-                  ))}
-                </div>
-
-                {/* Points */}
-                <span className="text-white text-lg font-bold mt-2">
-                  {(team.points || 0).toLocaleString()}
-                </span>
-              </div>
-            ))}
-          </div>
-        )}
-
-        {/* ─── Other Teams - 2 column grid ─── */}
-        {restTeams.length > 0 && (
-          <div className="grid grid-cols-2 gap-3">
-            {restTeams.map((team, idx) => (
-              <div
-                key={team.id}
-                className="rounded-xl px-3 py-3 flex items-center gap-3"
-                style={{
-                  background:
-                    idx % 4 < 2
-                      ? "rgba(140, 60, 180, 0.28)"
-                      : "rgba(120, 50, 160, 0.18)",
-                  border: "1px solid rgba(255,255,255,0.08)",
-                }}
-              >
-                {/* Avatar */}
-                <div
-                  className="rounded-full overflow-hidden flex-shrink-0"
-                  style={{ border: "2px solid #F39C12", width: 42, height: 42 }}
+          <motion.div
+            layout
+            className="grid gap-3 mb-3"
+            style={{ gridTemplateColumns: `repeat(${Math.min(topThree.length, 3)}, 1fr)` }}
+          >
+            <AnimatePresence mode="popLayout">
+              {topThree.map((team, idx) => (
+                <motion.div
+                  key={team.id}
+                  layout
+                  layoutId={`team-${team.id}`}
+                  initial={{ opacity: 0, y: -40 }}
+                  animate={{
+                    opacity: 1,
+                    y: 0,
+                    boxShadow: scoredIds.has(team.id)
+                      ? [
+                          "0 0 0px rgba(217,70,239,0)",
+                          "0 0 32px rgba(217,70,239,0.9)",
+                          "0 0 16px rgba(217,70,239,0.5)",
+                          "0 0 0px rgba(217,70,239,0)",
+                        ]
+                      : "0 0 0px rgba(217,70,239,0)",
+                  }}
+                  exit={{ opacity: 0, y: 40 }}
+                  transition={{ layout: { type: "spring", stiffness: 500, damping: 35 }, duration: 0.5 }}
+                  className="relative rounded-xl p-4 flex flex-col items-center text-center overflow-hidden"
+                  style={{
+                    background: "rgba(255,255,255,0.08)",
+                    border: "1px solid rgba(255,255,255,0.15)",
+                  }}
                 >
-                  <TeamAvatar team={team} size={38} />
-                </div>
+                  {/* Position Ribbon */}
+                  <PositionRibbon label={positionLabels[idx]} />
 
-                {/* Name & Points */}
-                <div className="flex flex-col min-w-0 flex-1">
-                  <div className="flex items-center">
-                    <span className="text-white text-sm font-semibold truncate">
-                      {team.name}
-                    </span>
+                  {/* Avatar */}
+                  <div className="mt-2 mb-2">
+                    <div
+                      className="rounded-full overflow-hidden"
+                      style={{ border: "3px solid #F39C12" }}
+                    >
+                      <TeamAvatar team={team} size={56} />
+                    </div>
+                  </div>
+
+                  {/* Team Name + Live indicator */}
+                  <div className="flex items-center justify-center">
+                    <span className="text-white text-base font-bold">{team.name}</span>
                     {team.session_status === "live" && <LivePulse />}
                   </div>
-                  {/* Checkpoint dots */}
-                  <div className="flex items-center gap-1 mt-1">
+
+                  {/* Storyline / team size */}
+                  <span className="text-white/50 text-xs mt-0.5">
+                    {team.storyline_title || `Team of ${team.team_size}`}
+                  </span>
+
+                  {/* Checkpoints */}
+                  <div className="flex items-center gap-1 mt-2">
                     {Array.from({ length: team.total_controllers || 0 }).map((_, i) => (
                       <div
                         key={i}
-                        className="w-2 h-2 rounded-full"
+                        className="w-2.5 h-2.5 rounded-full"
                         style={{
                           backgroundColor: i < (team.checkpoints_cleared || 0) ? "#D946EF" : "transparent",
-                          border: i < (team.checkpoints_cleared || 0) ? "none" : "1.5px solid rgba(217, 70, 239, 0.4)",
+                          border: i < (team.checkpoints_cleared || 0) ? "none" : "1.5px solid rgba(217, 70, 239, 0.5)",
                         }}
                       />
                     ))}
                   </div>
-                </div>
 
-                {/* Points */}
-                <span className="text-white text-base font-bold flex-shrink-0">
-                  {(team.points || 0).toLocaleString()}
-                </span>
-              </div>
-            ))}
-          </div>
+                  {/* Points */}
+                  <RollingNumber
+                    value={team.points || 0}
+                    className="text-white text-lg font-bold mt-2"
+                  />
+                </motion.div>
+              ))}
+            </AnimatePresence>
+          </motion.div>
         )}
-      </div>
+
+        {/* ─── Other Teams - 2 column grid ─── */}
+        {restTeams.length > 0 && (
+          <motion.div layout className="grid grid-cols-2 gap-3">
+            <AnimatePresence mode="popLayout">
+              {restTeams.map((team, idx) => (
+                <motion.div
+                  key={team.id}
+                  layout
+                  layoutId={`team-${team.id}`}
+                  initial={{ opacity: 0, y: -40 }}
+                  animate={{
+                    opacity: 1,
+                    y: 0,
+                    boxShadow: scoredIds.has(team.id)
+                      ? [
+                          "0 0 0px rgba(217,70,239,0)",
+                          "0 0 28px rgba(217,70,239,0.85)",
+                          "0 0 14px rgba(217,70,239,0.5)",
+                          "0 0 0px rgba(217,70,239,0)",
+                        ]
+                      : "0 0 0px rgba(217,70,239,0)",
+                  }}
+                  exit={{ opacity: 0, y: 40 }}
+                  transition={{ layout: { type: "spring", stiffness: 500, damping: 35 }, duration: 0.5 }}
+                  className="rounded-xl px-3 py-3 flex items-center gap-3"
+                  style={{
+                    background:
+                      idx % 4 < 2
+                        ? "rgba(140, 60, 180, 0.28)"
+                        : "rgba(120, 50, 160, 0.18)",
+                    border: "1px solid rgba(255,255,255,0.08)",
+                  }}
+                >
+                  {/* Avatar */}
+                  <div
+                    className="rounded-full overflow-hidden flex-shrink-0"
+                    style={{ border: "2px solid #F39C12", width: 42, height: 42 }}
+                  >
+                    <TeamAvatar team={team} size={38} />
+                  </div>
+
+                  {/* Name & Points */}
+                  <div className="flex flex-col min-w-0 flex-1">
+                    <div className="flex items-center">
+                      <span className="text-white text-sm font-semibold truncate">
+                        {team.name}
+                      </span>
+                      {team.session_status === "live" && <LivePulse />}
+                    </div>
+                    {/* Checkpoint dots */}
+                    <div className="flex items-center gap-1 mt-1">
+                      {Array.from({ length: team.total_controllers || 0 }).map((_, i) => (
+                        <div
+                          key={i}
+                          className="w-2 h-2 rounded-full"
+                          style={{
+                            backgroundColor: i < (team.checkpoints_cleared || 0) ? "#D946EF" : "transparent",
+                            border: i < (team.checkpoints_cleared || 0) ? "none" : "1.5px solid rgba(217, 70, 239, 0.4)",
+                          }}
+                        />
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Points */}
+                  <RollingNumber
+                    value={team.points || 0}
+                    className="text-white text-base font-bold flex-shrink-0"
+                  />
+                </motion.div>
+              ))}
+            </AnimatePresence>
+          </motion.div>
+        )}
+      </motion.div>
     </div>
   );
 }

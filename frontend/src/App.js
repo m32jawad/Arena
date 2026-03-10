@@ -9,6 +9,7 @@ import SignUp from './signup/SignUp';
 import LeaderboardPage from './leaderboard/LeaderboardPage';
 import LeaderboardPage2 from './leaderboard/LeaderboardPage2';
 import StationPage from './station/StationPage';
+import StationSimulationPage from './station/StationSimulationPage';
 
 function AppContent() {
   const { user, loading } = useAuth();
@@ -36,6 +37,7 @@ export default function App() {
               <Route path="/leaderboard" element={<LeaderboardPage />} />
               <Route path="/leaderboard2" element={<LeaderboardPage2 />} />
               <Route path="/station" element={<StationPage />} />
+              <Route path="/station-sim" element={<StationSimulationPage />} />
               <Route path="*" element={<AppContent />} />
             </Routes>
           </AppThemeProvider>

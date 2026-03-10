@@ -31,6 +31,13 @@ const VIDEO_MAP = {
   [STATES.RESULT]:  '/04-StationResult.mp4',
 };
 
+function getStationConnection(controller) {
+  const host = controller?.station_host || controller?.ip_address || window.location.hostname;
+  const parsedPort = Number(controller?.station_port || 8001);
+  const port = Number.isNaN(parsedPort) || parsedPort <= 0 ? 8001 : parsedPort;
+  return { host, port };
+}
+
 function formatTime(secs) {
   const s = Math.max(0, Math.floor(secs));
   const m = Math.floor(s / 60);
@@ -81,6 +88,9 @@ export default function StationPage() {
   const [controllers,       setControllers]       = useState([]);
   const [selectedCtrl,      setSelectedCtrl]      = useState(null);
   const [recentScans,       setRecentScans]       = useState([]);
+  const stationSimUrl = selectedCtrl
+    ? `/station-sim?station=${selectedCtrl.id}`
+    : '/station-sim';
 
   // WebSocket connection
   const [wsConnected,       setWsConnected]       = useState(false);
@@ -171,8 +181,7 @@ export default function StationPage() {
     // Fallback: try HTTP health check every 15 seconds
     const pollStationHealth = async () => {
       try {
-        const stationHost = selectedCtrl.ip_address || window.location.hostname;
-        const stationPort = 8001;
+        const { host: stationHost, port: stationPort } = getStationConnection(selectedCtrl);
         const response = await fetch(`http://${stationHost}:${stationPort}/health`, {
           timeout: 3000,
         });
@@ -242,9 +251,7 @@ export default function StationPage() {
     if (!selectedCtrl) return;
 
     // Connect to station hardware WebSocket
-    // Station runs on port 8001 by default
-    const stationHost = selectedCtrl.ip_address || window.location.hostname;
-    const stationPort = 8001;
+    const { host: stationHost, port: stationPort } = getStationConnection(selectedCtrl);
     const wsUrl = `ws://${stationHost}:${stationPort}/ws`;
 
     console.log(`🔌 Connecting to station WebSocket: ${wsUrl}`);
@@ -589,6 +596,7 @@ export default function StationPage() {
 
       {/* station name badge */}
       {selectedCtrl && <div style={styles.stationBadge}>{selectedCtrl.name}</div>}
+      <a href={stationSimUrl} style={styles.simulatorBadge}>Open Simulator</a>
 
       {/* ─── READY ─── */}
       {appState === STATES.READY && (
@@ -836,6 +844,23 @@ const styles = {
     letterSpacing: '0.1em',
     textTransform: 'uppercase',
     zIndex: 10,
+  },
+  simulatorBadge: {
+    position: 'absolute',
+    top: 18,
+    right: 20,
+    backgroundColor: 'rgba(15,80,145,0.75)',
+    color: '#fff',
+    fontSize: 12,
+    fontWeight: 700,
+    padding: '6px 12px',
+    borderRadius: 20,
+    backdropFilter: 'blur(6px)',
+    letterSpacing: '0.06em',
+    textTransform: 'uppercase',
+    zIndex: 10,
+    textDecoration: 'none',
+    border: '1px solid rgba(255,255,255,0.2)',
   },
   centerPanel: {
     position: 'absolute',

@@ -1462,7 +1462,13 @@ def public_controllers(request):
     """Return the list of controllers/checkpoints (public, for leaderboard circles)."""
     controllers = Controller.objects.all()
     return Response([
-        {'id': c.id, 'name': c.name}
+        {
+            'id': c.id,
+            'name': c.name,
+            'ip_address': c.ip_address,
+            'station_host': c.station_host,
+            'station_port': c.station_port,
+        }
         for c in controllers
     ])
 

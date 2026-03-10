@@ -313,8 +313,12 @@ export default function StationPage() {
                     party_name: sess.party_name,
                     rfid_tag: sess.rfid_tag,
                     session_minutes: sess.session_minutes,
+                    per_station_seconds: sess.per_station_seconds,
+                    total_controllers: sess.total_controllers,
+                    current_controller_index: sess.current_controller_index,
+                    is_end_controller: sess.is_end_controller,
                   });
-                  setCountdown(sess.remaining_seconds || 0);
+                  setCountdown(sess.station_remaining_seconds || sess.per_station_seconds || 0);
                   setStorylineHint(sess.storyline_hint || '');
                   setAppState(STATES.ACTIVE);
                 } else if (data.station_mode === 'result' && data.last_result) {
@@ -322,8 +326,14 @@ export default function StationPage() {
                   setResult({
                     party_name: data.last_result.party_name,
                     points: data.last_result.total_points,
-                    elapsed_seconds: data.last_result.elapsed_seconds,
-                    remaining_points_added: data.last_result.remaining_points_added,
+                    station_points: data.last_result.station_points,
+                    station_elapsed_seconds: data.last_result.station_elapsed_seconds,
+                    station_remaining_seconds: data.last_result.station_remaining_seconds,
+                    per_station_seconds: data.last_result.per_station_seconds,
+                    session_ended: data.last_result.session_ended,
+                    current_controller_index: data.last_result.current_controller_index,
+                    total_controllers: data.last_result.total_controllers,
+                    controller_name: data.last_result.controller_name,
                   });
                   setAppState(STATES.RESULT);
                 } else if (data.station_mode === 'ready') {
@@ -340,8 +350,12 @@ export default function StationPage() {
                   party_name: startSess.party_name,
                   rfid_tag: startSess.rfid_tag,
                   session_minutes: startSess.session_minutes,
+                  per_station_seconds: startSess.per_station_seconds,
+                  total_controllers: startSess.total_controllers,
+                  current_controller_index: startSess.current_controller_index,
+                  is_end_controller: startSess.is_end_controller,
                 });
-                setCountdown(startSess.remaining_seconds || startSess.session_minutes * 60);
+                setCountdown(startSess.station_remaining_seconds || startSess.per_station_seconds || startSess.session_minutes * 60);
                 setStorylineHint(startSess.storyline_hint || '');
                 setAppState(STATES.ACTIVE);
                 setRfidInput('');
@@ -350,14 +364,20 @@ export default function StationPage() {
                 break;
 
               case 'session_ended':
-                // Session ended (stop button pressed or staff scan)
+                // Session completed at this station (stop button pressed)
                 console.log('🏁 Session ended event received');
                 const endResult = data.result;
                 setResult({
                   party_name: endResult.party_name,
                   points: endResult.total_points,
-                  elapsed_seconds: endResult.elapsed_seconds,
-                  remaining_points_added: endResult.remaining_points_added,
+                  station_points: endResult.station_points,
+                  station_elapsed_seconds: endResult.station_elapsed_seconds,
+                  station_remaining_seconds: endResult.station_remaining_seconds,
+                  per_station_seconds: endResult.per_station_seconds,
+                  session_ended: endResult.session_ended,
+                  current_controller_index: endResult.current_controller_index,
+                  total_controllers: endResult.total_controllers,
+                  controller_name: endResult.controller_name,
                 });
                 setAppState(STATES.RESULT);
                 setSession(null);
@@ -386,8 +406,8 @@ export default function StationPage() {
                   if (data.hint) {
                     setStorylineHint(data.hint);
                   }
-                  setShowHint(true);
-                  setTimeout(() => setShowHint(false), 10000);
+                  // Toggle hint on/off
+                  setShowHint(prev => !prev);
                 }
                 break;
 
@@ -470,17 +490,27 @@ export default function StationPage() {
     clearInterval(countdownRef.current);
     setStopping(true);
     try {
+      const body = { rfid: sess.rfid_tag };
+      // Pass controller IP if we know it
+      if (selectedCtrl?.ip_address) body.controller_ip = selectedCtrl.ip_address;
+      
       const res  = await fetch(`${API_BASE}/rfid/stop/`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ rfid: sess.rfid_tag }),
+        body: JSON.stringify(body),
       });
       const data = await res.json();
       setResult(res.ok ? {
         party_name:            data.party_name || sess.party_name,
         points:                data.total_points,
-        elapsed_seconds:       data.elapsed_seconds,
-        remaining_points_added: data.remaining_points_added,
+        station_points:        data.station_points,
+        station_elapsed_seconds: data.station_elapsed_seconds,
+        station_remaining_seconds: data.station_remaining_seconds,
+        per_station_seconds:   data.per_station_seconds,
+        session_ended:         data.session_ended,
+        current_controller_index: data.current_controller_index,
+        total_controllers:     data.total_controllers,
+        controller_name:       data.controller_name,
       } : {
         party_name: sess.party_name,
         points: null,
@@ -512,16 +542,27 @@ export default function StationPage() {
         return;
       }
       // 2. Start / resume
+      const startBody = { rfid };
+      if (selectedCtrl?.ip_address) startBody.controller_ip = selectedCtrl.ip_address;
       const startRes  = await fetch(`${API_BASE}/rfid/start/`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ rfid }),
+        body: JSON.stringify(startBody),
       });
       const startData = await startRes.json();
       if (!startRes.ok) { setRfidError(startData.error || 'Failed to start session.'); return; }
 
-      setSession({ id: startData.session_id, party_name: startData.party_name, rfid_tag: rfid, session_minutes: startData.session_minutes });
-      setCountdown(startData.remaining_seconds);
+      setSession({
+        id: startData.session_id,
+        party_name: startData.party_name,
+        rfid_tag: rfid,
+        session_minutes: startData.session_minutes,
+        per_station_seconds: startData.per_station_seconds,
+        total_controllers: startData.total_controllers,
+        current_controller_index: startData.current_controller_index,
+        is_end_controller: startData.is_end_controller,
+      });
+      setCountdown(startData.station_remaining_seconds || startData.per_station_seconds || startData.remaining_seconds);
       setStorylineHint(startData.storyline_hint || '');
       setShowHint(false);
       setRfidInput('');
@@ -700,9 +741,15 @@ export default function StationPage() {
           <p  style={styles.activeLabel}>SESSION ACTIVE</p>
           <h1 style={styles.teamName}>{session.party_name}</h1>
 
+          {session.total_controllers > 1 && (
+            <p style={{ color: 'rgba(255,255,255,0.5)', fontSize: 12, fontWeight: 700, letterSpacing: '0.12em', margin: 0 }}>
+              STATION {(session.current_controller_index || 0) + 1} OF {session.total_controllers}
+            </p>
+          )}
+
           <div style={styles.timerCard}>
             <span style={styles.timerDigits}>{formatTime(countdown)}</span>
-            <span style={styles.timerSub}>REMAINING</span>
+            <span style={styles.timerSub}>STATION TIME REMAINING</span>
           </div>
 
           <button
@@ -710,19 +757,20 @@ export default function StationPage() {
             disabled={stopping}
             style={{ ...styles.stopBtn, opacity: stopping ? 0.5 : 1 }}
           >
-            {stopping ? 'Stopping…' : 'STOP SESSION'}
+            {stopping ? 'Stopping…' : 'STOP'}
           </button>
 
           <button
-            onClick={() => storylineHint ? setShowHint(true) : null}
+            onClick={() => storylineHint ? setShowHint(prev => !prev) : null}
             style={{
               ...styles.hintBtn,
               opacity: storylineHint ? 1 : 0.35,
               cursor: storylineHint ? 'pointer' : 'default',
+              ...(showHint && storylineHint ? { backgroundColor: 'rgba(251,191,36,0.3)', borderColor: '#fbbf24' } : {}),
             }}
-            title={storylineHint ? 'Show hint' : 'No hint for this storyline'}
+            title={storylineHint ? (showHint ? 'Hide hint' : 'Show hint') : 'No hint for this storyline'}
           >
-            💡 HINT
+            💡 {showHint ? 'HIDE HINT' : 'HINT'}
           </button>
         </div>
       )}
@@ -743,17 +791,40 @@ export default function StationPage() {
       {/* ─── RESULT ─── */}
       {appState === STATES.RESULT && result && (
         <div style={styles.centerPanel}>
-          <h1 style={styles.resultHeading}>SESSION COMPLETE</h1>
+          <h1 style={styles.resultHeading}>
+            {result.session_ended ? 'SESSION COMPLETE' : 'STATION COMPLETE'}
+          </h1>
           <p  style={styles.resultTeam}>{result.party_name}</p>
 
           {result.points != null ? (
-            <div style={styles.pointsCard}>
-              <span style={styles.pointsNumber}>{result.points}</span>
-              <span style={styles.pointsLabel}>TOTAL POINTS</span>
-              {result.remaining_points_added > 0 && (
-                <span style={styles.bonusChip}>+{result.remaining_points_added} time bonus</span>
+            <>
+              {/* Per-station points */}
+              <div style={styles.pointsCard}>
+                <span style={styles.pointsNumber}>{result.station_points ?? result.points}</span>
+                <span style={styles.pointsLabel}>
+                  {result.session_ended ? 'STATION POINTS' : 'POINTS THIS STATION'}
+                </span>
+                {result.per_station_seconds > 0 && result.station_remaining_seconds != null && (
+                  <span style={styles.bonusChip}>
+                    {formatTime(result.station_remaining_seconds)} remaining of {formatTime(result.per_station_seconds)}
+                  </span>
+                )}
+              </div>
+
+              {/* Total points — always shown */}
+              <div style={{ ...styles.pointsCard, borderColor: 'rgba(34,197,94,0.38)', backgroundColor: 'rgba(34,197,94,0.1)', marginTop: 8 }}>
+                <span style={{ ...styles.pointsNumber, fontSize: 52 }}>{result.points}</span>
+                <span style={{ ...styles.pointsLabel, color: '#22c55e' }}>TOTAL POINTS</span>
+              </div>
+
+              {/* Progress indicator */}
+              {result.total_controllers > 0 && (
+                <p style={{ color: 'rgba(255,255,255,0.5)', fontSize: 13, fontWeight: 600, letterSpacing: '0.08em', marginTop: 4 }}>
+                  Station {result.current_controller_index} of {result.total_controllers}
+                  {!result.session_ended && ' — Move to the next station and scan your card'}
+                </p>
               )}
-            </div>
+            </>
           ) : (
             <p style={{ color: '#f87171', marginTop: 12 }}>{result.error}</p>
           )}

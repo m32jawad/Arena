@@ -433,6 +433,8 @@ def _serialize_controller(c):
         'id': c.id,
         'name': c.name,
         'ip_address': c.ip_address,
+        'is_start': c.is_start,
+        'is_end': c.is_end,
         'cpu_usage': c.cpu_usage,
         'storage_usage': c.storage_usage,
         'cpu_temperature': c.cpu_temperature,
@@ -460,9 +462,18 @@ def controller_list_create(request):
     if not name or not ip_address:
         return Response({'error': 'Name and IP address are required.'}, status=status.HTTP_400_BAD_REQUEST)
 
+    is_start = data.get('is_start', False)
+    is_end = data.get('is_end', False)
+    if isinstance(is_start, str):
+        is_start = is_start.lower() in ('true', '1', 'yes')
+    if isinstance(is_end, str):
+        is_end = is_end.lower() in ('true', '1', 'yes')
+
     controller = Controller.objects.create(
         name=name,
         ip_address=ip_address,
+        is_start=is_start,
+        is_end=is_end,
         cpu_usage=data.get('cpu_usage', ''),
         storage_usage=data.get('storage_usage', ''),
         cpu_temperature=data.get('cpu_temperature', ''),
@@ -492,6 +503,12 @@ def controller_detail(request, pk):
         data = request.data
         controller.name = data.get('name', controller.name)
         controller.ip_address = data.get('ip_address', controller.ip_address)
+        if 'is_start' in data:
+            val = data['is_start']
+            controller.is_start = val if isinstance(val, bool) else str(val).lower() in ('true', '1', 'yes')
+        if 'is_end' in data:
+            val = data['is_end']
+            controller.is_end = val if isinstance(val, bool) else str(val).lower() in ('true', '1', 'yes')
         controller.cpu_usage = data.get('cpu_usage', controller.cpu_usage)
         controller.storage_usage = data.get('storage_usage', controller.storage_usage)
         controller.cpu_temperature = data.get('cpu_temperature', controller.cpu_temperature)
@@ -587,6 +604,7 @@ def _serialize_pending(p, request=None, include_checkpoints=False):
         'status': p.status,
         'created_at': p.created_at.isoformat() if p.created_at else '',
         'approved_at': p.approved_at.isoformat() if p.approved_at else '',
+        'current_controller_index': p.current_controller_index,
     }
     
     if include_checkpoints:
@@ -599,6 +617,7 @@ def _serialize_pending(p, request=None, include_checkpoints=False):
                 'controller_name': cp.controller.name,
                 'controller_ip': cp.controller.ip_address,
                 'cleared_at': cp.cleared_at.isoformat(),
+                'elapsed_seconds': cp.elapsed_seconds,
                 'points_earned': cp.points_earned,
             }
             for cp in checkpoints
@@ -886,20 +905,11 @@ def add_checkpoint(request, pk):
     if created:
         from django.utils import timezone
         
-        # Calculate points (same logic as rfid_checkpoint)
-        base_points = 10
-        time_bonus = 0
-        
-        if session.started_at:
-            elapsed_seconds = int((timezone.now() - session.started_at).total_seconds())
-            elapsed_minutes = elapsed_seconds / 60.0
-            time_bonus = int(100.0 / (1.0 + elapsed_minutes))
-        elif session.approved_at:
-            elapsed_seconds = int((timezone.now() - session.approved_at).total_seconds())
-            elapsed_minutes = elapsed_seconds / 60.0
-            time_bonus = int(100.0 / (1.0 + elapsed_minutes))
-        
-        points_earned = base_points + time_bonus
+        # Per-station points allocation
+        total_controllers = Controller.objects.count() or 1
+        per_station_seconds = (session.session_minutes * 60) // total_controllers
+        # Manual checkpoint gets full station points by default
+        points_earned = per_station_seconds // 6
         
         # Store points in checkpoint
         checkpoint.points_earned = points_earned
@@ -972,12 +982,17 @@ def remove_checkpoint(request, pk, checkpoint_id):
 @api_view(['POST'])
 @permission_classes([AllowAny])
 def rfid_start_session(request):
-    """Start or resume the session timer for a player identified by RFID tag.
+    """Start or resume the session timer when a player scans RFID at a controller.
 
-    Body: { "rfid": "<tag>" }
-    Starts the playtime counter on first call, resumes on subsequent calls.
+    Body: { "rfid": "<tag>", "controller_ip": "<ip>" (optional) }
+
+    Multi-station workflow:
+    - On the START controller: begins the session timer for the first time.
+    - On any subsequent controller: resumes the paused timer so the player
+      can continue their countdown at the new station.
     """
     rfid = request.data.get('rfid', '').strip()
+    controller_ip = request.data.get('controller_ip', '').strip()
     if not rfid:
         return Response({'error': 'RFID tag is required.'}, status=status.HTTP_400_BAD_REQUEST)
 
@@ -991,7 +1006,7 @@ def rfid_start_session(request):
 
     from django.utils import timezone
     now = timezone.now()
-    
+
     # Check if session time has already expired
     remaining = p.get_remaining_seconds()
     if remaining <= 0:
@@ -1000,39 +1015,70 @@ def rfid_start_session(request):
             'session_id': p.id,
             'party_name': p.party_name,
         }, status=status.HTTP_400_BAD_REQUEST)
-    
+
+    # Look up the controller (optional — for checking start/end flags)
+    controller = None
+    if controller_ip:
+        try:
+            controller = Controller.objects.get(ip_address=controller_ip)
+        except Controller.DoesNotExist:
+            pass
+
+    # Calculate per-station time
+    total_controllers = Controller.objects.count() or 1
+    per_station_seconds = (p.session_minutes * 60) // total_controllers
+
     # If first time starting, set started_at
     if not p.started_at:
         p.started_at = now
-    
-    # Set last_started_at to now and mark as playing
+
+    # Resume the timer
     p.last_started_at = now
     p.is_playing = True
     p.save(update_fields=['started_at', 'last_started_at', 'is_playing'])
-    
+
+    # Remaining seconds for this particular station (per-station countdown)
+    # = per_station_seconds (full allocation for this station)
+    station_remaining = per_station_seconds
+
     return Response({
-        'message': 'Session started.' if not p.started_at else 'Session resumed.',
+        'message': 'Session started.' if p.total_elapsed_seconds == 0 else 'Session resumed.',
         'session_id': p.id,
         'party_name': p.party_name,
         'session_minutes': p.session_minutes,
         'elapsed_seconds': p.get_elapsed_seconds(),
-        'remaining_seconds': remaining,
+        'remaining_seconds': p.get_remaining_seconds(),
+        'station_remaining_seconds': station_remaining,
+        'per_station_seconds': per_station_seconds,
+        'total_controllers': total_controllers,
+        'current_controller_index': p.current_controller_index,
         'started_at': p.last_started_at.isoformat(),
         'storyline_title': p.storyline.title if p.storyline else '',
         'storyline_hint': p.storyline.hint if p.storyline else '',
+        'is_end_controller': controller.is_end if controller else False,
+        'is_start_controller': controller.is_start if controller else False,
+        'controller_name': controller.name if controller else '',
     })
 
 
 @api_view(['POST'])
 @permission_classes([AllowAny])
 def rfid_stop_session(request):
-    """Stop and end the session for a player identified by RFID tag.
+    """Stop/pause the session at the current controller station.
 
-    Body: { "rfid": "<tag>" }
-    Stops the timer, calculates remaining time, converts it to points,
-    and marks the session as ended.
+    Body: { "rfid": "<tag>", "controller_ip": "<ip>" }
+
+    Multi-station workflow:
+    - Pauses the timer and records a checkpoint for this controller.
+    - Points for this station = remaining seconds of the per-station countdown / 6
+      (i.e. remaining time in 10ths of minutes).
+    - If this is the END controller, the entire session is ended and total
+      points are finalized.
+    - Otherwise the session stays 'approved' with timer paused, waiting for
+      the player to scan at the next station.
     """
     rfid = request.data.get('rfid', '').strip()
+    controller_ip = request.data.get('controller_ip', '').strip()
     if not rfid:
         return Response({'error': 'RFID tag is required.'}, status=status.HTTP_400_BAD_REQUEST)
 
@@ -1043,37 +1089,82 @@ def rfid_stop_session(request):
             {'error': 'No active session found for this RFID tag.'},
             status=status.HTTP_404_NOT_FOUND,
         )
-    
+
     from django.utils import timezone
-    
-    # Stop the timer if currently playing
+    now = timezone.now()
+
+    # Pause the timer — accumulate elapsed time
+    station_elapsed = 0
     if p.is_playing and p.last_started_at:
-        elapsed = (timezone.now() - p.last_started_at).total_seconds()
-        p.total_elapsed_seconds += int(elapsed)
-        p.is_playing = False
-        p.last_started_at = None
-    
-    # Calculate remaining time and convert to points
-    remaining_seconds = p.get_remaining_seconds()
-    remaining_points = remaining_seconds // 60  # Convert seconds to minutes
-    
-    # Add remaining points to existing points
-    p.points += remaining_points
-    
-    # End the session
-    p.status = 'ended'
-    p.ended_at = timezone.now()
-    
-    p.save(update_fields=['total_elapsed_seconds', 'is_playing', 'last_started_at', 'points', 'status', 'ended_at'])
-    
+        station_elapsed = int((now - p.last_started_at).total_seconds())
+        p.total_elapsed_seconds += station_elapsed
+    p.is_playing = False
+    p.last_started_at = None
+
+    # Calculate per-station allocation
+    total_controllers = Controller.objects.count() or 1
+    per_station_seconds = (p.session_minutes * 60) // total_controllers
+
+    # Points for this station = remaining time of per-station countdown
+    # remaining seconds converted to "10ths of minutes" (i.e. remaining_sec / 6)
+    station_remaining = max(0, per_station_seconds - station_elapsed)
+    # Points = remaining time in 10ths of minutes (e.g. 5min30s = 330s → 330/6 = 55 points)
+    station_points = station_remaining // 6
+
+    # Look up controller and record checkpoint
+    controller = None
+    checkpoint_created = False
+    if controller_ip:
+        try:
+            controller = Controller.objects.get(ip_address=controller_ip)
+        except Controller.DoesNotExist:
+            pass
+
+    if controller:
+        checkpoint, created = Checkpoint.objects.get_or_create(
+            session=p, controller=controller
+        )
+        checkpoint_created = created
+        if created:
+            checkpoint.elapsed_seconds = station_elapsed
+            checkpoint.points_earned = station_points
+            checkpoint.save(update_fields=['elapsed_seconds', 'points_earned'])
+            p.points += station_points
+
+    # Advance the controller index
+    p.current_controller_index += 1
+
+    is_end = controller.is_end if controller else False
+    session_ended = False
+
+    if is_end:
+        # End the entire session
+        p.status = 'ended'
+        p.ended_at = now
+        session_ended = True
+
+    p.save(update_fields=[
+        'total_elapsed_seconds', 'is_playing', 'last_started_at',
+        'points', 'current_controller_index',
+    ] + (['status', 'ended_at'] if session_ended else []))
+
     return Response({
-        'message': 'Session ended.',
+        'message': 'Session ended.' if session_ended else 'Station completed. Move to the next station.',
+        'session_ended': session_ended,
         'session_id': p.id,
         'party_name': p.party_name,
-        'elapsed_seconds': p.total_elapsed_seconds,
-        'remaining_seconds': remaining_seconds,
-        'remaining_points_added': remaining_points,
+        'station_elapsed_seconds': station_elapsed,
+        'station_remaining_seconds': station_remaining,
+        'station_points': station_points,
+        'per_station_seconds': per_station_seconds,
+        'total_elapsed_seconds': p.total_elapsed_seconds,
+        'remaining_seconds': p.get_remaining_seconds(),
         'total_points': p.points,
+        'current_controller_index': p.current_controller_index,
+        'total_controllers': total_controllers,
+        'controller_name': controller.name if controller else '',
+        'is_end_controller': is_end,
+        'checkpoint_created': checkpoint_created,
     })
 
 
@@ -1086,16 +1177,10 @@ def rfid_checkpoint(request):
 
     Body: { "rfid": "<tag>", "controller_ip": "<ip>" }
     Creates a Checkpoint row linking the session to the controller.
-    Calculates points based on checkpoint clear + time bonus.
     
-    Scoring System:
-    - Base points: 10 per checkpoint
-    - Time bonus: Up to 100 points based on speed
-      Formula: 100 / (1 + elapsed_minutes)
-      - Cleared in 1 min: ~50 bonus points
-      - Cleared in 2 mins: ~33 bonus points
-      - Cleared in 5 mins: ~16 bonus points
-      - Cleared in 10 mins: ~9 bonus points
+    Note: In the new multi-station workflow, checkpoints are primarily
+    created by rfid_stop_session when the stop button is pressed.
+    This endpoint can still be used for manual checkpoint recording.
     """
     rfid = request.data.get('rfid', '').strip()
     controller_ip = request.data.get('controller_ip', '').strip()
@@ -1130,39 +1215,19 @@ def rfid_checkpoint(request):
         session=p, controller=controller
     )
 
-    # Calculate points for the player (only if newly created)
     points_earned = 0
-    time_bonus = 0
-    elapsed_seconds = 0
     
     if created:
-        # Base points for clearing checkpoint
-        base_points = 10
+        # Per-station allocation
+        total_controllers = Controller.objects.count() or 1
+        per_station_seconds = (p.session_minutes * 60) // total_controllers
         
-        # Calculate time bonus based on how quickly they cleared it
-        if p.started_at:
-            # Time elapsed from when session actually started playing
-            elapsed_seconds = int((timezone.now() - p.started_at).total_seconds())
-            elapsed_minutes = elapsed_seconds / 60.0
-            
-            # Time bonus: faster = more points
-            # Formula: 100 / (1 + elapsed_minutes)
-            # This gives diminishing returns as time increases
-            time_bonus = int(100.0 / (1.0 + elapsed_minutes))
-        else:
-            # Fallback: use approved_at if started_at is not set
-            if p.approved_at:
-                elapsed_seconds = int((timezone.now() - p.approved_at).total_seconds())
-                elapsed_minutes = elapsed_seconds / 60.0
-                time_bonus = int(100.0 / (1.0 + elapsed_minutes))
+        # Default: award full station points if created manually
+        points_earned = per_station_seconds // 6
         
-        points_earned = base_points + time_bonus
-        
-        # Store points earned in checkpoint for future reference
         checkpoint.points_earned = points_earned
         checkpoint.save(update_fields=['points_earned'])
         
-        # Add points to session
         p.points += points_earned
         p.save(update_fields=['points'])
 
@@ -1174,9 +1239,6 @@ def rfid_checkpoint(request):
         'controller': controller.name,
         'cleared_at': checkpoint.cleared_at.isoformat(),
         'points_earned': points_earned if created else 0,
-        'base_points': 10 if created else 0,
-        'time_bonus': time_bonus if created else 0,
-        'elapsed_seconds': elapsed_seconds if created else 0,
         'total_points': p.points,
     }, status=status.HTTP_201_CREATED if created else status.HTTP_200_OK)
 
@@ -1212,12 +1274,19 @@ def rfid_status(request):
     if p.status == 'approved':
         remaining_secs = p.get_remaining_seconds()
         
+        # Per-station allocation
+        total_controllers = Controller.objects.count() or 1
+        per_station_seconds = (p.session_minutes * 60) // total_controllers
+        
         if remaining_secs > 0:
             data['session_status'] = 'active'
             data['remaining_seconds'] = remaining_secs
             data['remaining_minutes'] = remaining_secs // 60
             data['elapsed_seconds'] = p.get_elapsed_seconds()
             data['is_playing'] = p.is_playing
+            data['per_station_seconds'] = per_station_seconds
+            data['total_controllers'] = total_controllers
+            data['current_controller_index'] = p.current_controller_index
         else:
             # Timer exceeded — auto-end
             if p.is_playing and p.last_started_at:
@@ -1468,6 +1537,8 @@ def public_controllers(request):
             'ip_address': c.ip_address,
             'station_host': c.station_host,
             'station_port': c.station_port,
+            'is_start': c.is_start,
+            'is_end': c.is_end,
         }
         for c in controllers
     ])

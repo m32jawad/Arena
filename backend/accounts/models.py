@@ -177,6 +177,10 @@ class PendingSignup(models.Model):
         null=True, blank=True,
         help_text='When the session was fully ended',
     )
+    current_controller_index = models.PositiveIntegerField(
+        default=0,
+        help_text='Index of the current controller station the player is at (0-based)',
+    )
 
     class Meta:
         ordering = ['-created_at']
@@ -219,6 +223,14 @@ class Controller(models.Model):
         default=8001,
         help_text='Station hardware WebSocket port',
     )
+    is_start = models.BooleanField(
+        default=False,
+        help_text='Whether this is the start controller (first station)',
+    )
+    is_end = models.BooleanField(
+        default=False,
+        help_text='Whether this is the end/stop controller (last station)',
+    )
     cpu_usage = models.CharField(max_length=50, blank=True, default='')
     storage_usage = models.CharField(max_length=100, blank=True, default='')
     cpu_temperature = models.CharField(max_length=50, blank=True, default='')
@@ -244,9 +256,13 @@ class Checkpoint(models.Model):
         Controller, on_delete=models.CASCADE, related_name='checkpoints'
     )
     cleared_at = models.DateTimeField(auto_now_add=True)
+    elapsed_seconds = models.PositiveIntegerField(
+        default=0,
+        help_text='Time in seconds taken to complete this station',
+    )
     points_earned = models.PositiveIntegerField(
         default=0,
-        help_text='Total points earned for clearing this checkpoint (base + time bonus)'
+        help_text='Points earned = remaining seconds of the per-station countdown (in 10ths of minutes)'
     )
 
     class Meta:

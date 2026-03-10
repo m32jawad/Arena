@@ -56,20 +56,33 @@ class BackendAPIClient:
     # RFID Session Endpoints
     # ========================================================================
     
-    async def start_session(self, rfid_tag: str) -> Optional[Dict[str, Any]]:
+    async def start_session(self, rfid_tag: str, controller_ip: str = '') -> Optional[Dict[str, Any]]:
         """Start a game session for the given RFID tag.
+        
+        Args:
+            rfid_tag: The RFID tag to start a session for.
+            controller_ip: IP of the controller station (for multi-station tracking).
         
         Returns session data including:
         - session_id
         - party_name
         - session_minutes
         - remaining_seconds
+        - station_remaining_seconds
+        - per_station_seconds
+        - total_controllers
+        - current_controller_index
         - storyline_title
         - storyline_hint
+        - is_start_controller
+        - is_end_controller
         
         Or error dict with 'error' key if failed.
         """
-        result = await self._post('rfid/start/', {'rfid': rfid_tag})
+        data = {'rfid': rfid_tag}
+        if controller_ip:
+            data['controller_ip'] = controller_ip
+        result = await self._post('rfid/start/', data)
         if result and not result.get('error'):
             logger.info(f"✅ Session started for {rfid_tag}: {result.get('party_name')}")
         elif result and result.get('error'):
@@ -78,16 +91,26 @@ class BackendAPIClient:
             logger.warning(f"❌ Failed to start session for {rfid_tag} (no response)")
         return result
     
-    async def stop_session(self, rfid_tag: str) -> Optional[Dict[str, Any]]:
-        """Stop and end the game session for the given RFID tag.
+    async def stop_session(self, rfid_tag: str, controller_ip: str = '') -> Optional[Dict[str, Any]]:
+        """Stop/pause the game session at the current controller station.
+        
+        Args:
+            rfid_tag: The RFID tag to stop/pause.
+            controller_ip: IP of the controller station (for checkpoint recording).
         
         Returns result data including:
         - session_id
         - party_name
-        - elapsed_seconds
+        - session_ended (bool)
+        - station_points
         - total_points
+        - station_elapsed_seconds
+        - station_remaining_seconds
         """
-        result = await self._post('rfid/stop/', {'rfid': rfid_tag})
+        data = {'rfid': rfid_tag}
+        if controller_ip:
+            data['controller_ip'] = controller_ip
+        result = await self._post('rfid/stop/', data)
         if result:
             logger.info(f"✅ Session stopped for {rfid_tag}: {result.get('total_points')} points")
         else:

@@ -63,6 +63,8 @@ const METRIC_KEYS = Object.keys(METRIC_LABELS);
 const emptyForm = {
   name: '',
   ip_address: '',
+  is_start: false,
+  is_end: false,
 };
 
 const Stations = ({ readOnly = false }) => {
@@ -118,6 +120,8 @@ const Stations = ({ readOnly = false }) => {
     setForm({
       name: ctl.name,
       ip_address: ctl.ip_address,
+      is_start: ctl.is_start || false,
+      is_end: ctl.is_end || false,
     });
     setFormError('');
     setShowModal(true);
@@ -198,7 +202,15 @@ const Stations = ({ readOnly = false }) => {
               <div key={ctl.id} className="rounded-lg border p-6" style={{ backgroundColor: theme.sidebar_bg, borderColor: theme.sidebar_active_bg }}>
                 <div className="flex items-center gap-4 mb-1">
                   <div>
-                    <h2 className="text-lg font-medium" style={{ ...headLabelSt, fontFamily: headingFont }}>{ctl.name}</h2>
+                    <div className="flex items-center gap-2">
+                      <h2 className="text-lg font-medium" style={{ ...headLabelSt, fontFamily: headingFont }}>{ctl.name}</h2>
+                      {ctl.is_start && (
+                        <span className="text-xs font-bold px-2 py-0.5 rounded-full" style={{ backgroundColor: '#22c55e20', color: '#22c55e', border: '1px solid #22c55e50' }}>START</span>
+                      )}
+                      {ctl.is_end && (
+                        <span className="text-xs font-bold px-2 py-0.5 rounded-full" style={{ backgroundColor: '#ef444420', color: '#ef4444', border: '1px solid #ef444450' }}>END</span>
+                      )}
+                    </div>
                     <div className="text-xs mt-0.5" style={labelSt}>IP: {ctl.ip_address}</div>
                   </div>
                   {!readOnly && (
@@ -313,6 +325,30 @@ const Stations = ({ readOnly = false }) => {
                     style={inputSt}
                   />
                 </div>
+              </div>
+
+              {/* Start / End controller toggles */}
+              <div className="flex gap-6">
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={form.is_start}
+                    onChange={(e) => setForm({ ...form, is_start: e.target.checked, ...(e.target.checked ? { is_end: false } : {}) })}
+                    className="w-4 h-4 rounded"
+                    style={{ accentColor: '#22c55e' }}
+                  />
+                  <span className="text-sm font-medium" style={{ color: '#22c55e' }}>Start Controller</span>
+                </label>
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={form.is_end}
+                    onChange={(e) => setForm({ ...form, is_end: e.target.checked, ...(e.target.checked ? { is_start: false } : {}) })}
+                    className="w-4 h-4 rounded"
+                    style={{ accentColor: '#ef4444' }}
+                  />
+                  <span className="text-sm font-medium" style={{ color: '#ef4444' }}>End Controller</span>
+                </label>
               </div>
 
               {formError && <div className="text-sm text-red-600">{formError}</div>}

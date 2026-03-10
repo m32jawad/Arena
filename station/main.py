@@ -379,8 +379,8 @@ async def process_rfid_scan(rfid_tag: str):
                 })
                 return
             
-            # Try to start a new session
-            result = await state.api_client.start_session(rfid_tag)
+            # Try to start/resume a session (pass controller_ip so backend knows which station)
+            result = await state.api_client.start_session(rfid_tag, controller_ip=state.station_ip)
             
             if result and not result.get('error'):
                 state.current_session = {
@@ -389,8 +389,15 @@ async def process_rfid_scan(rfid_tag: str):
                     'rfid_tag': rfid_tag,
                     'session_minutes': result.get('session_minutes'),
                     'remaining_seconds': result.get('remaining_seconds'),
+                    'station_remaining_seconds': result.get('station_remaining_seconds'),
+                    'per_station_seconds': result.get('per_station_seconds'),
+                    'total_controllers': result.get('total_controllers'),
+                    'current_controller_index': result.get('current_controller_index'),
                     'storyline_title': result.get('storyline_title'),
                     'storyline_hint': result.get('storyline_hint'),
+                    'is_end_controller': result.get('is_end_controller', False),
+                    'is_start_controller': result.get('is_start_controller', False),
+                    'controller_name': result.get('controller_name', ''),
                 }
                 
                 # Switch to ACTIVE mode
@@ -439,7 +446,7 @@ def handle_stop_button():
 
 
 def handle_hint_button():
-    """Handle hint button press."""
+    """Handle hint button press — toggle hint on/off."""
     logger.info(f"💡 Hint button pressed (station mode: {state.mode})")
     
     if state.mode == StationMode.ACTIVE and state.current_session:
@@ -447,6 +454,7 @@ def handle_hint_button():
         asyncio.create_task(state.broadcast({
             'type': 'button_press',
             'button': 'hint',
+            'action': 'toggle',
             'hint': hint
         }))
     else:
@@ -454,28 +462,44 @@ def handle_hint_button():
 
 
 async def end_current_session():
-    """End the current active session and move to RESULT mode."""
+    """End/pause the current session at this station and move to RESULT mode.
+    
+    In multi-station workflow:
+    - Calls stop with controller_ip so backend records the checkpoint
+    - If this is the END controller, session is fully ended
+    - If not, session is paused — player goes to next station
+    """
     if not state.current_session:
         logger.warning("No active session to end")
         return
     
     try:
         rfid_tag = state.current_session.get('rfid_tag')
-        result = await state.api_client.stop_session(rfid_tag)
+        result = await state.api_client.stop_session(rfid_tag, controller_ip=state.station_ip)
         
         if result:
+            session_ended = result.get('session_ended', True)
+            
             # Store result for RESULT screen
             state.last_result = {
                 'party_name': result.get('party_name'),
                 'total_points': result.get('total_points'),
-                'elapsed_seconds': result.get('elapsed_seconds'),
-                'remaining_points_added': result.get('remaining_points_added'),
+                'station_points': result.get('station_points'),
+                'station_elapsed_seconds': result.get('station_elapsed_seconds'),
+                'station_remaining_seconds': result.get('station_remaining_seconds'),
+                'per_station_seconds': result.get('per_station_seconds'),
+                'total_elapsed_seconds': result.get('total_elapsed_seconds'),
+                'remaining_seconds': result.get('remaining_seconds'),
+                'current_controller_index': result.get('current_controller_index'),
+                'total_controllers': result.get('total_controllers'),
+                'controller_name': result.get('controller_name'),
+                'session_ended': session_ended,
+                'is_end_controller': result.get('is_end_controller', False),
             }
             
             # Switch to RESULT mode
             state.mode = StationMode.RESULT
             state.game_active_relay.turn_off()
-            # Don't turn ready relay on yet — wait for staff reset
             
             # Broadcast result to frontend
             await state.broadcast({
@@ -483,7 +507,10 @@ async def end_current_session():
                 'result': state.last_result
             })
             
-            logger.info(f"✅ Session ended: {result.get('party_name')} - {result.get('total_points')} points")
+            if session_ended:
+                logger.info(f"✅ Session fully ended: {result.get('party_name')} - {result.get('total_points')} points")
+            else:
+                logger.info(f"✅ Station completed: {result.get('party_name')} - +{result.get('station_points')} pts this station")
             
             # Clear current session
             state.current_session = None

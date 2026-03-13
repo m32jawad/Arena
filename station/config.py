@@ -11,7 +11,7 @@ class Settings(BaseSettings):
     station_name: str = "Station 1"
     
     # Backend API
-    backend_url: str = "http://192.168.1.100:8000"
+    backend_url: str = "http://192.168.50.10:8000"
     api_base_url: Optional[str] = None
     
     # Hardware GPIO pins (BCM numbering)
@@ -27,6 +27,7 @@ class Settings(BaseSettings):
     # Station server
     station_port: int = 8001
     station_host: str = "0.0.0.0"
+    station_ip: Optional[str] = None  # Explicit IP (e.g. Ethernet IP); auto-detected if not set
     
     # WebSocket
     ws_reconnect_delay: int = 5

@@ -56,7 +56,7 @@ class StationState:
         self.last_result: Optional[Dict[str, Any]] = None  # Keep result data for RESULT screen
         self.mode: str = StationMode.OFFLINE  # Station state machine
         self.websocket_clients: List[WebSocket] = []
-        self.station_ip: str = self._get_local_ip()
+        self.station_ip: str = settings.station_ip if settings.station_ip else self._get_local_ip()
         self.boot_time: float = time.time()
         
         # Hardware components
@@ -142,10 +142,9 @@ async def lifespan(app: FastAPI):
             station_id=settings.station_id
         )
         
-        # Initialize NFC reader
+        # Initialize NFC reader object (SAM_configuration deferred to after all hardware is ready)
         if settings.nfc_enabled:
             state.nfc_reader = state.hardware.init_nfc_reader()
-            await state.nfc_reader.start(on_card_detected=handle_rfid_scan)
         
         # Initialize buttons
         state.stop_button, state.hint_button = state.hardware.init_buttons(
@@ -167,6 +166,11 @@ async def lifespan(app: FastAPI):
         # Set initial state to READY
         state.ready_relay.turn_on()
         state.mode = StationMode.READY
+        
+        # Start NFC reader AFTER all other hardware is initialized (SAM_configuration
+        # is called in start() so relay/button GPIO setup can't disrupt the PN532 state)
+        if settings.nfc_enabled and state.nfc_reader:
+            await state.nfc_reader.start(on_card_detected=handle_rfid_scan)
         
         # Start health reporter
         health_task = asyncio.create_task(health_reporter_loop())

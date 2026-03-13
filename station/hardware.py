@@ -163,16 +163,13 @@ class RaspberryPiNFCReader(NFCReader):
             # Create I2C bus
             i2c = busio.I2C(board.SCL, board.SDA)
             
-            # Create PN532 object
+            # Create PN532 object (SAM_configuration called in start() after all hardware is ready)
             self.pn532 = PN532_I2C(i2c, debug=False)
-            
-            # Configure PN532
-            self.pn532.SAM_configuration()
             
             self.running = False
             self.task = None
             self.on_card_detected = None
-            logger.info("✅ PN532 NFC reader initialized")
+            logger.info("✅ PN532 NFC reader initialized (SAM config pending start)")
         except Exception as e:
             logger.error(f"❌ Failed to initialize NFC reader: {e}")
             raise
@@ -181,8 +178,21 @@ class RaspberryPiNFCReader(NFCReader):
         """Start reading cards."""
         self.on_card_detected = on_card_detected
         self.running = True
+        # Configure PN532 here (after all other hardware is initialized) so GPIO
+        # relay/button setup can't disrupt the PN532 state before first read.
+        self.pn532.SAM_configuration()
+        logger.info("✅ PN532 SAM_configuration applied")
         self.task = asyncio.create_task(self._read_loop())
+        # Log if the task crashes so silent failures are visible
+        self.task.add_done_callback(self._on_task_done)
         logger.info("📡 NFC reader started, waiting for cards...")
+    
+    def _on_task_done(self, task):
+        """Called when _read_loop task finishes — logs any unexpected crash."""
+        if not task.cancelled():
+            exc = task.exception()
+            if exc:
+                logger.error(f"❌ NFC read loop crashed: {exc}", exc_info=exc)
     
     async def stop(self):
         """Stop reading cards."""
@@ -191,14 +201,29 @@ class RaspberryPiNFCReader(NFCReader):
             self.task.cancel()
         logger.info("🛑 NFC reader stopped")
     
+    def _blocking_read(self):
+        """Blocking NFC read — runs in a thread executor."""
+        return self.pn532.read_passive_target(timeout=0.5)
+
+    def _blocking_reinit(self):
+        """Re-run SAM_configuration in a thread executor (recovery)."""
+        self.pn532.SAM_configuration()
+
     async def _read_loop(self):
         """Continuously read for NFC cards."""
         last_uid = None
+        none_count = 0  # consecutive no-card reads
+        poll_count = 0
+        loop = asyncio.get_running_loop()
+        logger.info("🔄 NFC read loop running")
         while self.running:
             try:
-                uid = self.pn532.read_passive_target(timeout=0.5)
+                # Run blocking I2C read in a thread so it doesn't block the event loop
+                uid = await loop.run_in_executor(None, self._blocking_read)
+                poll_count += 1
                 
                 if uid is not None:
+                    none_count = 0
                     uid_str = uid.hex().upper()
                     
                     # Avoid duplicate reads
@@ -208,12 +233,21 @@ class RaspberryPiNFCReader(NFCReader):
                             self.on_card_detected(uid_str)
                         last_uid = uid_str
                 else:
-                    # Reset last_uid when no card is present
                     last_uid = None
+                    none_count += 1
+                    # Heartbeat: confirm loop is alive every ~30 seconds
+                    if poll_count % 50 == 0:
+                        logger.debug(f"📡 NFC polling alive (polls={poll_count}, no-card streak={none_count})")
+                    # Auto-recovery: re-apply SAM_configuration if PN532 seems unresponsive
+                    # (500 consecutive None reads ≈ 5 minutes with no card, triggers re-init)
+                    if none_count > 0 and none_count % 500 == 0:
+                        logger.warning(f"⚠️ NFC: {none_count} consecutive no-card reads — re-applying SAM_configuration")
+                        await loop.run_in_executor(None, self._blocking_reinit)
+                        logger.info("✅ NFC SAM_configuration re-applied")
                 
                 await asyncio.sleep(0.1)
             except Exception as e:
-                logger.error(f"❌ NFC read error: {e}")
+                logger.error(f"❌ NFC read error: {e}", exc_info=True)
                 await asyncio.sleep(1)
 
 

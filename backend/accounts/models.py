@@ -282,6 +282,10 @@ class StaffProfile(models.Model):
         max_length=100, blank=True, default='',
         help_text='RFID tag for staff identification and controller operations'
     )
+    profile_picture = models.ImageField(
+        upload_to='staff/', blank=True, null=True,
+        help_text='Profile picture for the staff member',
+    )
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 

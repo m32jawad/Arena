@@ -15,6 +15,10 @@ const AVATARS = {
   "avatar-6": { bg: "#F39C12", skin: "#9B59B6", hair: "#E74C3C" },
   "avatar-7": { bg: "#2ECC71", skin: "#E74C3C", hair: "#3498DB" },
   "avatar-8": { bg: "#3498DB", skin: "#F1C40F", hair: "#E74C3C" },
+  "group-1": { bg: "#FF1493", skin: "#F39C12", hair: "#2C3E50" },
+  "group-2": { bg: "#00BFFF", skin: "#E74C3C", hair: "#2ECC71" },
+  "group-3": { bg: "#00CED1", skin: "#E67E22", hair: "#8E44AD" },
+  "group-4": { bg: "#FF4500", skin: "#3498DB", hair: "#2ECC71" },
 };
 
 /* ─── Avatar SVG (reusable) ─── */

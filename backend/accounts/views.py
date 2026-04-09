@@ -60,18 +60,29 @@ def logout_view(request):
 @permission_classes([IsAuthenticated])
 def me_view(request):
     user = request.user
+    staff_profile, _ = StaffProfile.objects.get_or_create(user=user)
+    profile_picture_url = ''
+    if staff_profile.profile_picture:
+        profile_picture_url = request.build_absolute_uri(staff_profile.profile_picture.url)
     return Response({
         'id': user.id,
         'username': user.username,
         'email': user.email,
         'is_superuser': user.is_superuser,
         'is_staff': user.is_staff,
+        'profile_picture': profile_picture_url,
     })
 
 
-def _serialize_user(u):
+def _serialize_user(u, request=None):
     # Get or create staff profile for the user
     staff_profile, _ = StaffProfile.objects.get_or_create(user=u)
+    profile_picture_url = ''
+    if staff_profile.profile_picture:
+        profile_picture_url = (
+            request.build_absolute_uri(staff_profile.profile_picture.url)
+            if request else staff_profile.profile_picture.url
+        )
     return {
         'id': u.id,
         'username': u.username,
@@ -82,6 +93,7 @@ def _serialize_user(u):
         'is_superuser': u.is_superuser,
         'is_active': u.is_active,
         'rfid_tag': staff_profile.rfid_tag,
+        'profile_picture': profile_picture_url,
     }
 
 
@@ -93,7 +105,7 @@ def staff_list_create(request):
 
     if request.method == 'GET':
         users = User.objects.all().order_by('id')
-        return Response([_serialize_user(u) for u in users])
+        return Response([_serialize_user(u, request) for u in users])
 
     # POST — create new user
     data = request.data
@@ -104,6 +116,7 @@ def staff_list_create(request):
     last_name = data.get('last_name', '').strip()
     is_staff = data.get('is_staff', True)
     rfid_tag = data.get('rfid_tag', '').strip()
+    profile_picture = request.FILES.get('profile_picture')
 
     if not username or not password:
         return Response({'error': 'Username and password are required.'}, status=status.HTTP_400_BAD_REQUEST)
@@ -119,12 +132,14 @@ def staff_list_create(request):
         is_staff=is_staff,
     )
     
-    # Create or update staff profile with RFID tag
+    # Create or update staff profile with RFID tag and optional profile picture
     staff_profile, _ = StaffProfile.objects.get_or_create(user=user)
     staff_profile.rfid_tag = rfid_tag
+    if profile_picture:
+        staff_profile.profile_picture = profile_picture
     staff_profile.save()
     
-    return Response(_serialize_user(user), status=status.HTTP_201_CREATED)
+    return Response(_serialize_user(user, request), status=status.HTTP_201_CREATED)
 
 
 @api_view(['GET', 'PUT', 'DELETE'])
@@ -139,7 +154,7 @@ def staff_detail(request, pk):
         return Response({'error': 'User not found.'}, status=status.HTTP_404_NOT_FOUND)
 
     if request.method == 'GET':
-        return Response(_serialize_user(user))
+        return Response(_serialize_user(user, request))
 
     if request.method == 'PUT':
         data = request.data
@@ -154,13 +169,16 @@ def staff_detail(request, pk):
             user.set_password(new_password)
         user.save()
         
-        # Update staff profile RFID tag if provided
+        # Update staff profile RFID tag and optional profile picture
+        staff_profile, _ = StaffProfile.objects.get_or_create(user=user)
         if 'rfid_tag' in data:
-            staff_profile, _ = StaffProfile.objects.get_or_create(user=user)
             staff_profile.rfid_tag = data.get('rfid_tag', '').strip()
-            staff_profile.save()
+        profile_picture = request.FILES.get('profile_picture')
+        if profile_picture:
+            staff_profile.profile_picture = profile_picture
+        staff_profile.save()
         
-        return Response(_serialize_user(user))
+        return Response(_serialize_user(user, request))
 
     if request.method == 'DELETE':
         if user.is_superuser:
@@ -182,7 +200,7 @@ def staff_toggle_block(request, pk):
 
     user.is_active = not user.is_active
     user.save()
-    return Response(_serialize_user(user))
+    return Response(_serialize_user(user, request))
 
 
 # ── General Settings (singleton) ──

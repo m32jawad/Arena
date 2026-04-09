@@ -26,7 +26,8 @@ from api_client import BackendAPIClient
 # Setup logging
 logging.basicConfig(
     level=logging.DEBUG if settings.debug else logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    force=True,  # Override any prior logging config (e.g. from uvicorn imports)
 )
 logger = logging.getLogger(__name__)
 
@@ -704,11 +705,15 @@ async def websocket_endpoint(websocket: WebSocket):
 
 if __name__ == "__main__":
     import uvicorn
-    
+
+    # IMPORTANT: log_config=None prevents uvicorn from calling logging.config.dictConfig()
+    # which would reset the root logger to WARNING and silence all application INFO logs
+    # (hardware init, NFC card reads, button presses, etc.)
     uvicorn.run(
         "main:app",
         host=settings.station_host,
         port=settings.station_port,
         reload=settings.debug,
-        log_level="debug" if settings.debug else "info"
+        log_level="debug" if settings.debug else "info",
+        log_config=None,
     )

@@ -1072,10 +1072,10 @@ def rfid_stop_session(request):
     - Pauses the timer and records a checkpoint for this controller.
     - Points for this station = remaining seconds of the per-station countdown / 6
       (i.e. remaining time in 10ths of minutes).
-    - If this is the END controller, the entire session is ended and total
-      points are finalized.
-    - Otherwise the session stays 'approved' with timer paused, waiting for
-      the player to scan at the next station.
+        - The session ends only after all controller stations have been cleared,
+            regardless of order and regardless of is_start/is_end flags.
+        - Otherwise the session stays 'approved' with timer paused, waiting for
+            the player to scan at the next station.
     """
     rfid = request.data.get('rfid', '').strip()
     controller_ip = request.data.get('controller_ip', '').strip()
@@ -1131,13 +1131,15 @@ def rfid_stop_session(request):
             checkpoint.save(update_fields=['elapsed_seconds', 'points_earned'])
             p.points += station_points
 
-    # Advance the controller index
-    p.current_controller_index += 1
+    # Progress is based on unique controllers cleared (not visit order).
+    checkpoints_cleared = Checkpoint.objects.filter(session=p).count()
+    p.current_controller_index = checkpoints_cleared
 
-    is_end = controller.is_end if controller else False
+    # End only when all stations/controllers are completed.
+    all_stations_completed = total_controllers > 0 and checkpoints_cleared >= total_controllers
     session_ended = False
 
-    if is_end:
+    if all_stations_completed:
         # End the entire session
         p.status = 'ended'
         p.ended_at = now
@@ -1149,7 +1151,7 @@ def rfid_stop_session(request):
     ] + (['status', 'ended_at'] if session_ended else []))
 
     return Response({
-        'message': 'Session ended.' if session_ended else 'Station completed. Move to the next station.',
+        'message': 'Session ended. All stations completed.' if session_ended else 'Station completed. Move to the next station.',
         'session_ended': session_ended,
         'session_id': p.id,
         'party_name': p.party_name,
@@ -1162,8 +1164,9 @@ def rfid_stop_session(request):
         'total_points': p.points,
         'current_controller_index': p.current_controller_index,
         'total_controllers': total_controllers,
+        'checkpoints_cleared': checkpoints_cleared,
         'controller_name': controller.name if controller else '',
-        'is_end_controller': is_end,
+        'is_end_controller': controller.is_end if controller else False,
         'checkpoint_created': checkpoint_created,
     })
 

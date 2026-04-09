@@ -229,6 +229,8 @@ export default function SignUp() {
       }
       if (selectedAvatar) {
         fd.append("avatar_id", selectedAvatar.id);
+      } else if (selectedGroup) {
+        fd.append("avatar_id", `group-${selectedGroup}`);
       }
       if (selectedGroup) {
         fd.append("group_id", selectedGroup);

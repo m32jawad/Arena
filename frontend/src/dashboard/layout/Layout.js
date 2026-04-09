@@ -161,11 +161,20 @@ export default function Layout() {
             onClick={logout}
           />
           <div className="flex items-center gap-3 mt-6 p-3">
-            <img
-              src="https://i.pravatar.cc/40"
-              className="w-10 h-10 rounded-full"
-              alt="User avatar"
-            />
+            {user?.profile_picture ? (
+              <img
+                src={user.profile_picture}
+                className="w-10 h-10 rounded-full object-cover flex-shrink-0"
+                alt="User avatar"
+              />
+            ) : (
+              <div
+                className="w-10 h-10 rounded-full flex items-center justify-center text-sm font-semibold flex-shrink-0"
+                style={{ backgroundColor: primaryColor, color: '#ffffff' }}
+              >
+                {(user?.first_name?.[0] || user?.username?.[0] || '?').toUpperCase()}
+              </div>
+            )}
             <div>
               <p className="text-sm font-medium" style={{ color: theme.sidebar_active_text }}>{user?.username}</p>
               <p className="text-xs" style={{ color: theme.sidebar_text }}>{user?.email || (isSuperuser ? 'Superuser' : 'Staff')}</p>
@@ -179,7 +188,13 @@ export default function Layout() {
         {/* Header (breadcrumb + actions) */}
         <div className="flex items-center justify-between mb-8 hidden">
           <div className="flex items-center gap-3">
-            <img src="https://i.pravatar.cc/28" alt="avatar" className="w-7 h-7 rounded-full" />
+            {user?.profile_picture ? (
+              <img src={user.profile_picture} alt="avatar" className="w-7 h-7 rounded-full object-cover" />
+            ) : (
+              <div className="w-7 h-7 rounded-full flex items-center justify-center text-xs font-semibold" style={{ backgroundColor: primaryColor, color: '#ffffff' }}>
+                {(user?.first_name?.[0] || user?.username?.[0] || '?').toUpperCase()}
+              </div>
+            )}
             <div>
               <div className="text-sm" style={{ color: theme.sidebar_text }}>{user?.username} <span style={{ color: theme.sidebar_active_bg }}>/</span> <span className="font-medium">{active}</span></div>
               <h1 className="text-2xl font-semibold" style={{ fontFamily: headingFont, color: theme.sidebar_active_text }}>{active}</h1>

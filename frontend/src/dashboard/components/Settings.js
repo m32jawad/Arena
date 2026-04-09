@@ -321,6 +321,8 @@ const Settings = () => {
   const [showStaffModal, setShowStaffModal] = useState(false);
   const [editingStaff, setEditingStaff] = useState(null); // null = add, object = edit
   const [staffForm, setStaffForm] = useState({ username: '', email: '', first_name: '', last_name: '', password: '', is_staff: true, rfid_tag: '' });
+  const [staffPicture, setStaffPicture] = useState(null);
+  const [staffPicturePreview, setStaffPicturePreview] = useState('');
 
   const fetchStaff = useCallback(async () => {
     setStaffLoading(true);
@@ -342,12 +344,16 @@ const Settings = () => {
   const openAddStaff = () => {
     setEditingStaff(null);
     setStaffForm({ username: '', email: '', first_name: '', last_name: '', password: '', is_staff: true, rfid_tag: '' });
+    setStaffPicture(null);
+    setStaffPicturePreview('');
     setShowStaffModal(true);
   };
 
   const openEditStaff = (user) => {
     setEditingStaff(user);
     setStaffForm({ username: user.username, email: user.email, first_name: user.first_name, last_name: user.last_name, password: '', is_staff: user.is_staff, rfid_tag: user.rfid_tag || '' });
+    setStaffPicture(null);
+    setStaffPicturePreview(user.profile_picture || '');
     setShowStaffModal(true);
   };
 
@@ -355,13 +361,43 @@ const Settings = () => {
     e.preventDefault();
     setStaffError('');
     try {
+      const getCookie = (name) => {
+        const value = `; ${document.cookie}`;
+        const parts = value.split(`; ${name}=`);
+        if (parts.length === 2) return parts.pop().split(';').shift();
+        return null;
+      };
       if (editingStaff) {
-        const body = { ...staffForm };
-        if (!body.password) delete body.password;
-        delete body.username; // username not editable
-        await apiFetch(`${API_BASE}/staff/${editingStaff.id}/`, { method: 'PUT', body: JSON.stringify(body) });
+        if (staffPicture) {
+          const fd = new FormData();
+          Object.entries(staffForm).forEach(([k, v]) => {
+            if (k !== 'username' && !(k === 'password' && !v)) fd.append(k, v);
+          });
+          fd.append('profile_picture', staffPicture);
+          await fetch(`${API_BASE}/staff/${editingStaff.id}/`, {
+            method: 'PUT', credentials: 'include',
+            headers: { 'X-CSRFToken': getCookie('csrftoken') || '' },
+            body: fd,
+          });
+        } else {
+          const body = { ...staffForm };
+          if (!body.password) delete body.password;
+          delete body.username;
+          await apiFetch(`${API_BASE}/staff/${editingStaff.id}/`, { method: 'PUT', body: JSON.stringify(body) });
+        }
       } else {
-        await apiFetch(`${API_BASE}/staff/`, { method: 'POST', body: JSON.stringify(staffForm) });
+        if (staffPicture) {
+          const fd = new FormData();
+          Object.entries(staffForm).forEach(([k, v]) => fd.append(k, v));
+          fd.append('profile_picture', staffPicture);
+          await fetch(`${API_BASE}/staff/`, {
+            method: 'POST', credentials: 'include',
+            headers: { 'X-CSRFToken': getCookie('csrftoken') || '' },
+            body: fd,
+          });
+        } else {
+          await apiFetch(`${API_BASE}/staff/`, { method: 'POST', body: JSON.stringify(staffForm) });
+        }
       }
       setShowStaffModal(false);
       fetchStaff();
@@ -1083,6 +1119,20 @@ const Settings = () => {
                     </button>
                     <h2 className="text-lg font-semibold mb-4" style={headLabelSt}>{editingStaff ? 'Edit User' : 'Add New User'}</h2>
                     <form onSubmit={handleStaffSubmit} className="space-y-4">
+                      <div className="flex flex-col items-center gap-2">
+                        <div className="w-20 h-20 rounded-full overflow-hidden border flex items-center justify-center text-2xl font-bold" style={{ borderColor: globalTheme.sidebar_active_bg, backgroundColor: globalTheme.sidebar_active_bg, color: globalTheme.sidebar_active_text }}>
+                          {staffPicturePreview
+                            ? <img src={staffPicturePreview} alt="Profile" className="w-full h-full object-cover" />
+                            : ((staffForm.first_name?.[0] || staffForm.username?.[0] || '?').toUpperCase())}
+                        </div>
+                        <label className="cursor-pointer text-xs px-3 py-1 border rounded" style={{ borderColor: globalTheme.sidebar_active_bg, color: globalTheme.sidebar_text }}>
+                          {staffPicturePreview ? 'Change Photo' : 'Upload Photo'}
+                          <input type="file" accept="image/*" className="hidden" onChange={(e) => {
+                            const file = e.target.files[0];
+                            if (file) { setStaffPicture(file); setStaffPicturePreview(URL.createObjectURL(file)); }
+                          }} />
+                        </label>
+                      </div>
                       {!editingStaff && (
                         <div>
                           <label className="text-xs" style={labelSt}>Username *</label>

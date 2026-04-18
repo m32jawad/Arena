@@ -407,13 +407,26 @@ async def process_rfid_scan(rfid_tag: str):
                 logger.info(f"✅ Session started: {result.get('party_name')}")
             else:
                 error_msg = 'Invalid RFID tag. No approved session found.'
+                error_code = None
+                error_meta = {}
                 if result and result.get('error'):
-                    error_msg = result.get('error')
+                    error_code = result.get('error_code')
+                    if error_code == 'station_already_completed':
+                        controller_name = result.get('controller_name') or settings.station_name
+                        error_msg = f'Station "{controller_name}" already completed for this session. Move to a new station and scan again.'
+                        error_meta = {
+                            'controller_name': controller_name,
+                            'controller_ip': result.get('controller_ip', ''),
+                        }
+                    else:
+                        error_msg = result.get('error')
                 logger.warning(f"❌ Failed to start session for {rfid_tag}: {error_msg}")
                 
                 await state.broadcast({
                     'type': 'error',
-                    'message': error_msg
+                    'message': error_msg,
+                    'error_code': error_code,
+                    **error_meta,
                 })
             return
         

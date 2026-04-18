@@ -45,6 +45,15 @@ function formatTime(secs) {
   return `${String(m).padStart(2, '0')}:${String(r).padStart(2, '0')}`;
 }
 
+function mapStationStartError(payload) {
+  if (!payload) return 'Failed to start session.';
+  if (payload.error_code === 'station_already_completed') {
+    const controllerName = payload.controller_name ? ` "${payload.controller_name}"` : '';
+    return `This session already completed station${controllerName}. Move to a new station and scan again.`;
+  }
+  return payload.error || payload.message || 'Failed to start session.';
+}
+
 function toStationSlug(name, fallbackId) {
   const base = String(name || '')
     .trim()
@@ -453,7 +462,7 @@ export default function StationPage() {
 
               case 'error':
                 console.log('❌ Error received:', data.message);
-                setRfidError(data.message || 'Station error');
+                setRfidError(mapStationStartError(data));
                 setTimeout(() => setRfidError(''), 8000);
                 break;
 
@@ -590,7 +599,7 @@ export default function StationPage() {
         body: JSON.stringify(startBody),
       });
       const startData = await startRes.json();
-      if (!startRes.ok) { setRfidError(startData.error || 'Failed to start session.'); return; }
+      if (!startRes.ok) { setRfidError(mapStationStartError(startData)); return; }
 
       setSession({
         id: startData.session_id,

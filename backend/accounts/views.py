@@ -1046,6 +1046,18 @@ def rfid_start_session(request):
     total_controllers = Controller.objects.count() or 1
     per_station_seconds = (p.session_minutes * 60) // total_controllers
 
+    # Prevent replaying a station already completed in this session.
+    # A checkpoint means this station was already cleared once.
+    if controller and Checkpoint.objects.filter(session=p, controller=controller).exists():
+        return Response({
+            'error': f'Station "{controller.name}" already completed for this session. Go to a new station.',
+            'error_code': 'station_already_completed',
+            'session_id': p.id,
+            'party_name': p.party_name,
+            'controller_name': controller.name,
+            'controller_ip': controller.ip_address,
+        }, status=status.HTTP_400_BAD_REQUEST)
+
     # If first time starting, set started_at
     if not p.started_at:
         p.started_at = now

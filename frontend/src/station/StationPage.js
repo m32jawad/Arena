@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import { useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 
 // Inject CSS animation for pulse effect
 if (typeof document !== 'undefined' && !document.getElementById('station-pulse-css')) {
@@ -45,6 +45,17 @@ function formatTime(secs) {
   return `${String(m).padStart(2, '0')}:${String(r).padStart(2, '0')}`;
 }
 
+function toStationSlug(name, fallbackId) {
+  const base = String(name || '')
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '');
+  if (base) return base;
+  if (fallbackId != null) return `station-${fallbackId}`;
+  return 'station';
+}
+
 const AVATARS = {
   "avatar-1": { bg: "#6C3483", skin: "#F39C12", hair: "#2C3E50" },
   "avatar-2": { bg: "#1ABC9C", skin: "#E74C3C", hair: "#F1C40F" },
@@ -86,6 +97,9 @@ const RecentAvatar = ({ scan }) => {
 // ─────────────────────────────────────────────
 export default function StationPage() {
   const [searchParams] = useSearchParams();
+  const { stationName: stationSlugParam } = useParams();
+  const navigate = useNavigate();
+  const location = useLocation();
   const stationId = searchParams.get('station') || searchParams.get('id');
 
   const [appState,          setAppState]          = useState(STATES.OFFLINE);
@@ -154,11 +168,33 @@ export default function StationPage() {
 
   // ── auto-select station from URL param ──────
   useEffect(() => {
-    if (stationId && controllers.length > 0) {
-      const ctrl = controllers.find(c => String(c.id) === String(stationId));
-      if (ctrl) { setSelectedCtrl(ctrl); setAppState(STATES.READY); }
+    if (controllers.length === 0) return;
+
+    let ctrl = null;
+    if (stationSlugParam) {
+      const normalizedSlug = decodeURIComponent(stationSlugParam).toLowerCase();
+      ctrl = controllers.find(c => toStationSlug(c.name, c.id) === normalizedSlug);
     }
-  }, [stationId, controllers]);
+
+    if (!ctrl && stationId) {
+      ctrl = controllers.find(c => String(c.id) === String(stationId));
+    }
+
+    if (ctrl) {
+      setSelectedCtrl(ctrl);
+      setAppState(prev => (prev === STATES.OFFLINE ? STATES.READY : prev));
+    }
+  }, [stationSlugParam, stationId, controllers]);
+
+  // ── keep station URL canonicalized as /station/<name-slug> ──────
+  useEffect(() => {
+    if (!selectedCtrl) return;
+    const slug = toStationSlug(selectedCtrl.name, selectedCtrl.id);
+    const targetPath = `/station/${slug}`;
+    if (location.pathname !== targetPath) {
+      navigate(targetPath, { replace: true });
+    }
+  }, [selectedCtrl, location.pathname, navigate]);
 
   // ── monitor station health (mark stale after 30s) ───────────
   useEffect(() => {
@@ -619,7 +655,11 @@ export default function StationPage() {
               : <div style={styles.selectorList}>
                   {controllers.map(ctrl => (
                     <button key={ctrl.id} style={styles.selectorBtn}
-                      onClick={() => { setSelectedCtrl(ctrl); setAppState(STATES.READY); }}>
+                      onClick={() => {
+                        setSelectedCtrl(ctrl);
+                        setAppState(STATES.READY);
+                        navigate(`/station/${toStationSlug(ctrl.name, ctrl.id)}`);
+                      }}>
                       {ctrl.name}
                     </button>
                   ))}
@@ -641,7 +681,7 @@ export default function StationPage() {
 
       {/* station name badge */}
       {selectedCtrl && <div style={styles.stationBadge}>{selectedCtrl.name}</div>}
-      <a href={stationSimUrl} style={styles.simulatorBadge}>Open Simulator</a>
+      {/* <a href={stationSimUrl} style={styles.simulatorBadge}>Open Simulator</a> */}
 
       {/* ─── READY ─── */}
       {appState === STATES.READY && (
@@ -686,7 +726,7 @@ export default function StationPage() {
           {/* Animated scan indicator when hardware connected */}
           {wsConnected && (
             <div style={styles.scanPulse}>
-              <div style={styles.scanIcon}>📡</div>
+              <div style={styles.scanIcon}></div>
               <p style={styles.scanText}>Waiting for RFID scan…</p>
             </div>
           )}

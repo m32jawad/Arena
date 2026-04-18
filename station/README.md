@@ -96,8 +96,9 @@ nano .env
 sudo apt-get update
 sudo apt-get upgrade
 
-# Install system dependencies
+# Install system dependencies (including GPIO support for Pi 5)
 sudo apt-get install -y python3-pip python3-venv git i2c-tools
+sudo apt-get install -y python3-lgpio python3-rpi-lgpio swig
 
 # Enable I2C interface
 sudo raspi-config
@@ -116,7 +117,9 @@ source venv/bin/activate
 pip install -r requirements.txt
 
 # Install GPIO libraries (uncomment in requirements.txt first)
-pip install RPi.GPIO gpiozero adafruit-circuitpython-pn532
+# Edit requirements.txt and uncomment the hardware library lines, then:
+pip install gpiozero adafruit-circuitpython-pn532 adafruit-blinka
+# Note: RPi.GPIO is NOT needed on Raspberry Pi 5 (use gpiozero instead)
 
 # Configure station
 cp .env.example .env
@@ -240,9 +243,10 @@ The station exposes the following REST API endpoints:
 - `POST /simulate/rfid` - Simulate RFID card scan
   ```json
   {
-    "rfid_tag": "AABBCCDD"
+    "rfid_tag": "123456789"
   }
   ```
+  Note: Use USB format (decimal number), not hex format
 
 - `POST /simulate/button/stop` - Simulate stop button press
 
@@ -298,8 +302,9 @@ Expected response:
 ```bash
 curl -X POST http://localhost:8001/simulate/rfid \
   -H "Content-Type: application/json" \
-  -d '{"rfid_tag": "AABBCCDD"}'
+  -d '{"rfid_tag": "123456789"}'
 ```
+Note: RFID tags are now in USB format (decimal number)
 
 ### 3. Test Button Simulation
 

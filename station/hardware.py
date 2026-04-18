@@ -1,10 +1,14 @@
 """Hardware abstraction layer for GPIO, NFC, and other peripherals."""
 import asyncio
 import logging
+import os
 from typing import Callable, Optional
 from abc import ABC, abstractmethod
 
 logger = logging.getLogger(__name__)
+
+# Force gpiozero to use lgpio pin factory (required for Raspberry Pi 5)
+os.environ.setdefault('GPIOZERO_PIN_FACTORY', 'lgpio')
 
 
 # ============================================================================
@@ -224,11 +228,15 @@ class RaspberryPiNFCReader(NFCReader):
                 
                 if uid is not None:
                     none_count = 0
-                    uid_str = uid.hex().upper()
+                    
+                    # Convert UID to USB format (decimal number, little-endian)
+                    uid_bytes = bytes(uid)
+                    uid_str = str(int.from_bytes(uid_bytes, byteorder="little"))
+                    hex_uid = uid_bytes.hex().upper()
                     
                     # Avoid duplicate reads
                     if uid_str != last_uid:
-                        logger.info(f"🎫 Card detected: {uid_str}")
+                        logger.info(f"🎫 Card detected: {uid_str} (HEX: {hex_uid})")
                         if self.on_card_detected:
                             self.on_card_detected(uid_str)
                         last_uid = uid_str
@@ -252,81 +260,69 @@ class RaspberryPiNFCReader(NFCReader):
 
 
 class RaspberryPiButton(Button):
-    """Real button using RPi.GPIO with polling instead of interrupts."""
+    """Real button using gpiozero (works on Pi 5 with lgpio)."""
     
     def __init__(self, pin: int, name: str, pull_up: bool = True):
         try:
-            import RPi.GPIO as GPIO
-            
-            self.GPIO = GPIO
             self.pin = pin
             self.name = name
             self.pull_up = pull_up
             self.on_press = None
-            self.last_state = GPIO.HIGH if pull_up else GPIO.LOW
-            self._poll_task = None
-            self._running = False
+            self.button = None
+            self._loop = None
             
-            # Setup GPIO mode if not already set
-            try:
-                self.GPIO.setwarnings(False)
-                self.GPIO.setmode(self.GPIO.BCM)
-            except:
-                pass  # Already set
+            logger.info(f"✅ Button '{name}' initialized for GPIO{pin}")
             
         except Exception as e:
             logger.error(f"❌ Failed to initialize button '{name}': {e}")
             raise
     
     def setup(self, on_press: Callable[[], None]):
-        """Setup button with callback using polling."""
+        """Setup button with callback."""
         try:
+            from gpiozero import Button as GPIOButton
+            
             self.on_press = on_press
             
-            # Setup the pin
-            pull = self.GPIO.PUD_UP if self.pull_up else self.GPIO.PUD_DOWN
-            self.GPIO.setup(self.pin, self.GPIO.IN, pull_up_down=pull)
+            # Capture the current asyncio event loop so we can schedule callbacks
+            # from gpiozero's background thread
+            try:
+                self._loop = asyncio.get_running_loop()
+            except RuntimeError:
+                self._loop = None
             
-            # Start polling in background
-            self._running = True
-            self._poll_task = asyncio.create_task(self._poll_button())
+            self.button = GPIOButton(
+                self.pin, 
+                pull_up=self.pull_up,
+                bounce_time=0.2
+            )
             
-            logger.info(f"✅ Button '{self.name}' setup on GPIO{self.pin} (polling mode)")
+            # Set up the when_pressed callback
+            self.button.when_pressed = self._handle_press
+            
+            logger.info(f"✅ Button '{self.name}' setup on GPIO{self.pin} (gpiozero)")
         except Exception as e:
             logger.error(f"❌ Failed to setup button '{self.name}' on GPIO{self.pin}: {e}")
             raise
     
-    async def _poll_button(self):
-        """Poll button state in background task."""
-        import time
-        
-        while self._running:
-            try:
-                current_state = self.GPIO.input(self.pin)
-                
-                # Detect button press (transition from HIGH to LOW for pull-up)
-                pressed = (self.pull_up and current_state == self.GPIO.LOW and self.last_state == self.GPIO.HIGH)
-                
-                if pressed and self.on_press:
-                    logger.debug(f"🔘 Button '{self.name}' pressed")
-                    self.on_press()
-                    # Debounce: wait before detecting next press
-                    await asyncio.sleep(0.3)
-                
-                self.last_state = current_state
-                await asyncio.sleep(0.05)  # Poll every 50ms
-                
-            except Exception as e:
-                logger.error(f"Error polling button '{self.name}': {e}")
-                await asyncio.sleep(0.1)
+    def _handle_press(self):
+        """Internal handler — called from gpiozero's background thread."""
+        if self.on_press:
+            logger.info(f"🔘 Button '{self.name}' pressed")
+            # gpiozero fires callbacks on a background thread, but the
+            # on_press handlers use asyncio (create_task, broadcast, etc.).
+            # Use call_soon_threadsafe to schedule the callback on the
+            # event loop thread.
+            if self._loop and self._loop.is_running():
+                self._loop.call_soon_threadsafe(self.on_press)
+            else:
+                self.on_press()
     
     def cleanup(self):
         """Cleanup button resources."""
         try:
-            self._running = False
-            if self._poll_task:
-                self._poll_task.cancel()
-            self.GPIO.cleanup(self.pin)
+            if self.button:
+                self.button.close()
         except Exception as e:
             logger.debug(f"Button cleanup error (expected): {e}")
 
@@ -453,3 +449,5 @@ class HardwareManager:
                     logger.debug(f"Component cleanup: {e}")
         
         logger.info("✅ Hardware cleanup complete")
+
+# ______________________--

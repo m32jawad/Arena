@@ -119,18 +119,6 @@ async def lifespan(app: FastAPI):
     logger.info(f"   Simulate Hardware: {settings.simulate_hardware}")
     logger.info("=" * 60)
     
-    # Clean up any existing GPIO state on real hardware
-    if not settings.simulate_hardware:
-        try:
-            import RPi.GPIO as GPIO
-            GPIO.setwarnings(False)
-            GPIO.cleanup()
-            logger.info("🧹 Cleaned up existing GPIO state")
-            # Wait a moment for GPIO to settle
-            await asyncio.sleep(0.5)
-        except Exception as e:
-            logger.warning(f"Could not cleanup GPIO (might be first run): {e}")
-    
     health_task = None
     
     try:

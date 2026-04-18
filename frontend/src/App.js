@@ -37,6 +37,7 @@ export default function App() {
               <Route path="/leaderboard" element={<LeaderboardPage />} />
               <Route path="/leaderboard2" element={<LeaderboardPage2 />} />
               <Route path="/station" element={<StationPage />} />
+              <Route path="/station/:stationName" element={<StationPage />} />
               <Route path="/station-sim" element={<StationSimulationPage />} />
               <Route path="*" element={<AppContent />} />
             </Routes>

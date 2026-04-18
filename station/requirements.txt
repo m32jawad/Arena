@@ -7,6 +7,13 @@ pydantic==2.10.3
 pydantic-settings==2.6.1
 
 # Raspberry Pi GPIO libraries (install only on Raspberry Pi)
-# RPi.GPIO==0.7.1
+# For Raspberry Pi 5, install system packages first:
+#   sudo apt-get update
+#   sudo apt-get install -y python3-lgpio python3-rpi-lgpio swig
+# Then install these Python packages:
+#   pip install gpiozero adafruit-circuitpython-pn532 adafruit-blinka
+#
+# Note: RPi.GPIO doesn't support Pi 5. We use gpiozero (with lgpio backend) instead.
 # gpiozero==2.0.1
 # adafruit-circuitpython-pn532==2.3.28
+# adafruit-blinka

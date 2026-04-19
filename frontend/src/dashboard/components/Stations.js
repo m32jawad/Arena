@@ -65,6 +65,9 @@ const emptyForm = {
   ip_address: '',
   is_start: false,
   is_end: false,
+  hint_audio: null,
+  hint_audio_url: '',
+  clear_hint_audio: false,
 };
 
 const Stations = ({ readOnly = false }) => {
@@ -122,6 +125,9 @@ const Stations = ({ readOnly = false }) => {
       ip_address: ctl.ip_address,
       is_start: ctl.is_start || false,
       is_end: ctl.is_end || false,
+      hint_audio: null,
+      hint_audio_url: ctl.hint_audio || '',
+      clear_hint_audio: false,
     });
     setFormError('');
     setShowModal(true);
@@ -131,16 +137,28 @@ const Stations = ({ readOnly = false }) => {
     e.preventDefault();
     setFormError('');
     try {
-      if (editing) {
-        await apiFetch(`${API_BASE}/controllers/${editing.id}/`, {
-          method: 'PUT',
-          body: JSON.stringify(form),
-        });
-      } else {
-        await apiFetch(`${API_BASE}/controllers/`, {
-          method: 'POST',
-          body: JSON.stringify(form),
-        });
+      const fd = new FormData();
+      fd.append('name', form.name);
+      fd.append('ip_address', form.ip_address);
+      fd.append('is_start', form.is_start);
+      fd.append('is_end', form.is_end);
+      if (form.hint_audio) {
+        fd.append('hint_audio', form.hint_audio);
+      } else if (form.clear_hint_audio) {
+        fd.append('clear_hint_audio', 'true');
+      }
+      const url = editing
+        ? `${API_BASE}/controllers/${editing.id}/`
+        : `${API_BASE}/controllers/`;
+      const res = await fetch(url, {
+        method: editing ? 'PUT' : 'POST',
+        credentials: 'include',
+        headers: { 'X-CSRFToken': getCookie('csrftoken') || '' },
+        body: fd,
+      });
+      if (!res.ok) {
+        const data = await res.json();
+        throw new Error(data.error || 'Request failed');
       }
       setShowModal(false);
       fetchControllers();
@@ -205,10 +223,10 @@ const Stations = ({ readOnly = false }) => {
                     <div className="flex items-center gap-2">
                       <h2 className="text-lg font-medium" style={{ ...headLabelSt, fontFamily: headingFont }}>{ctl.name}</h2>
                       {ctl.is_start && (
-                        <span className="text-xs font-bold px-2 py-0.5 rounded-full" style={{ backgroundColor: '#22c55e20', color: '#22c55e', border: '1px solid #22c55e50' }}>START</span>
+                        <span className="hidden text-xs font-bold px-2 py-0.5 rounded-full" style={{ backgroundColor: '#22c55e20', color: '#22c55e', border: '1px solid #22c55e50' }}>START</span>
                       )}
                       {ctl.is_end && (
-                        <span className="text-xs font-bold px-2 py-0.5 rounded-full" style={{ backgroundColor: '#ef444420', color: '#ef4444', border: '1px solid #ef444450' }}>END</span>
+                        <span className="hidden   text-xs font-bold px-2 py-0.5 rounded-full" style={{ backgroundColor: '#ef444420', color: '#ef4444', border: '1px solid #ef444450' }}>END</span>
                       )}
                     </div>
                     <div className="text-xs mt-0.5" style={labelSt}>IP: {ctl.ip_address}</div>
@@ -334,21 +352,45 @@ const Stations = ({ readOnly = false }) => {
                     type="checkbox"
                     checked={form.is_start}
                     onChange={(e) => setForm({ ...form, is_start: e.target.checked, ...(e.target.checked ? { is_end: false } : {}) })}
-                    className="w-4 h-4 rounded"
+                    className="w-4 h-4 rounded hidden"
                     style={{ accentColor: '#22c55e' }}
                   />
-                  <span className="text-sm font-medium" style={{ color: '#22c55e' }}>Start Controller</span>
+                  <span className="hidden text-sm font-medium" style={{ color: '#22c55e' }}>Start Controller</span>
                 </label>
                 <label className="flex items-center gap-2 cursor-pointer">
                   <input
                     type="checkbox"
                     checked={form.is_end}
                     onChange={(e) => setForm({ ...form, is_end: e.target.checked, ...(e.target.checked ? { is_start: false } : {}) })}
-                    className="w-4 h-4 rounded"
+                    className="w-4 h-4 hidden rounded"
                     style={{ accentColor: '#ef4444' }}
                   />
-                  <span className="text-sm font-medium" style={{ color: '#ef4444' }}>End Controller</span>
+                  <span className="hidden text-sm font-medium" style={{ color: '#ef4444' }}>End Controller</span>
                 </label>
+              </div>
+
+              {/* Hint Audio */}
+              <div>
+                <label className="text-xs font-medium block mb-1" style={labelSt}>Hint Audio (optional)</label>
+                {form.hint_audio_url && !form.clear_hint_audio && !form.hint_audio && (
+                  <div className="flex items-center gap-2 mb-2 text-sm" style={labelSt}>
+                    <span className="truncate max-w-xs">{form.hint_audio_url.split('/').pop()}</span>
+                    <button
+                      type="button"
+                      onClick={() => setForm({ ...form, clear_hint_audio: true })}
+                      className="text-red-500 text-xs underline"
+                    >
+                      Remove
+                    </button>
+                  </div>
+                )}
+                <input
+                  type="file"
+                  accept="audio/*"
+                  onChange={(e) => setForm({ ...form, hint_audio: e.target.files[0] || null, clear_hint_audio: false })}
+                  className="w-full p-2 border rounded text-sm"
+                  style={inputSt}
+                />
               </div>
 
               {formError && <div className="text-sm text-red-600">{formError}</div>}

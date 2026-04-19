@@ -136,7 +136,8 @@ export default function StationPage() {
   const [countdown,      setCountdown]      = useState(0);
   const [stopping,       setStopping]       = useState(false);
   const [storylineHint,  setStorylineHint]  = useState('');
-  const [showHint,       setShowHint]       = useState(false);
+  const [hintAudioUrl,   setHintAudioUrl]   = useState('');
+  const [hintCooldown,   setHintCooldown]   = useState(false);
 
   // RESULT
   const [result,      setResult]      = useState(null);
@@ -149,6 +150,7 @@ export default function StationPage() {
   const staffRfidRef  = useRef(null);
   const sessionRef    = useRef(null);  // stable ref for timer callback
   const countdownRef  = useRef(null);
+  const hintAudioRef  = useRef(null);  // ref for hint audio element
 
   // keep sessionRef in sync
   useEffect(() => { sessionRef.current = session; }, [session]);
@@ -369,6 +371,7 @@ export default function StationPage() {
                   });
                   setCountdown(sess.station_remaining_seconds || sess.per_station_seconds || 0);
                   setStorylineHint(sess.storyline_hint || '');
+                  setHintAudioUrl(sess.hint_audio || '');
                   setAppState(STATES.ACTIVE);
                 } else if (data.station_mode === 'result' && data.last_result) {
                   console.log('🔄 Resuming result screen');
@@ -406,10 +409,10 @@ export default function StationPage() {
                 });
                 setCountdown(startSess.station_remaining_seconds || startSess.per_station_seconds || startSess.session_minutes * 60);
                 setStorylineHint(startSess.storyline_hint || '');
+                setHintAudioUrl(startSess.hint_audio || '');
                 setAppState(STATES.ACTIVE);
                 setRfidInput('');
                 setRfidError('');
-                setShowHint(false);
                 break;
 
               case 'session_ended':
@@ -430,7 +433,8 @@ export default function StationPage() {
                 });
                 setAppState(STATES.RESULT);
                 setSession(null);
-                setShowHint(false);
+                setHintAudioUrl('');
+                if (hintAudioRef.current) { hintAudioRef.current.pause(); hintAudioRef.current = null; }
                 clearInterval(countdownRef.current);
                 break;
 
@@ -444,7 +448,8 @@ export default function StationPage() {
                 setStaffRfid('');
                 setStaffError('');
                 setStorylineHint('');
-                setShowHint(false);
+                setHintAudioUrl('');
+                if (hintAudioRef.current) { hintAudioRef.current.pause(); hintAudioRef.current = null; }
                 setAppState(STATES.READY);
                 break;
 
@@ -452,11 +457,24 @@ export default function StationPage() {
                 // Hardware button pressed
                 console.log('🔘 Button press:', data.button);
                 if (data.button === 'hint') {
+                  const audioUrl = data.hint_audio;
+                  if (audioUrl) {
+                    // Play hint audio in background
+                    try {
+                      if (hintAudioRef.current) {
+                        hintAudioRef.current.pause();
+                        hintAudioRef.current = null;
+                      }
+                      const audio = new Audio(audioUrl);
+                      hintAudioRef.current = audio;
+                      audio.play().catch(err => console.error('Audio play failed:', err));
+                    } catch (err) {
+                      console.error('Failed to play hint audio:', err);
+                    }
+                  }
                   if (data.hint) {
                     setStorylineHint(data.hint);
                   }
-                  // Toggle hint on/off
-                  setShowHint(prev => !prev);
                 }
                 break;
 
@@ -613,7 +631,7 @@ export default function StationPage() {
       });
       setCountdown(startData.station_remaining_seconds || startData.per_station_seconds || startData.remaining_seconds);
       setStorylineHint(startData.storyline_hint || '');
-      setShowHint(false);
+      setHintAudioUrl(startData.hint_audio || '');
       setRfidInput('');
       setAppState(STATES.ACTIVE);
     } catch { setRfidError('Connection error. Please try again.'); }
@@ -642,7 +660,8 @@ export default function StationPage() {
         setStaffRfid(''); setStaffError('');
         setResult(null); setSession(null);
         setRfidInput(''); setRfidError('');
-        setStorylineHint(''); setShowHint(false);
+        setStorylineHint(''); setHintAudioUrl('');
+        if (hintAudioRef.current) { hintAudioRef.current.pause(); hintAudioRef.current = null; }
         setAppState(STATES.READY);
       } else {
         setStaffError(data.error || 'Not a valid staff RFID.');
@@ -814,30 +833,35 @@ export default function StationPage() {
           </button>
 
           <button
-            onClick={() => storylineHint ? setShowHint(prev => !prev) : null}
+            onClick={() => {
+              if (hintCooldown) return;
+              // Play hint audio in background
+              if (hintAudioUrl) {
+                try {
+                  if (hintAudioRef.current) {
+                    hintAudioRef.current.pause();
+                    hintAudioRef.current = null;
+                  }
+                  const audio = new Audio(hintAudioUrl);
+                  hintAudioRef.current = audio;
+                  audio.play().catch(err => console.error('Audio play failed:', err));
+                } catch (err) {
+                  console.error('Failed to play hint audio:', err);
+                }
+              }
+              // 10s cooldown
+              setHintCooldown(true);
+              setTimeout(() => setHintCooldown(false), 10000);
+            }}
             style={{
               ...styles.hintBtn,
-              opacity: storylineHint ? 1 : 0.35,
-              cursor: storylineHint ? 'pointer' : 'default',
-              ...(showHint && storylineHint ? { backgroundColor: 'rgba(251,191,36,0.3)', borderColor: '#fbbf24' } : {}),
+              opacity: (hintAudioUrl || storylineHint) && !hintCooldown ? 1 : 0.35,
+              cursor: (hintAudioUrl || storylineHint) && !hintCooldown ? 'pointer' : 'default',
             }}
-            title={storylineHint ? (showHint ? 'Hide hint' : 'Show hint') : 'No hint for this storyline'}
+            title={hintCooldown ? 'Cooldown active…' : (hintAudioUrl ? 'Play hint audio' : 'No hint for this station')}
           >
-            💡 {showHint ? 'HIDE HINT' : 'HINT'}
+            💡 {hintCooldown ? 'WAIT…' : 'HINT'}
           </button>
-        </div>
-      )}
-
-      {/* ─── HINT POPUP ─── */}
-      {showHint && storylineHint && (
-        <div style={styles.hintOverlay} onClick={() => setShowHint(false)}>
-          <div style={styles.hintModal} onClick={e => e.stopPropagation()}>
-            <div style={styles.hintModalHeader}>
-              <span style={styles.hintModalTitle}>💡 HINT</span>
-              <button onClick={() => setShowHint(false)} style={styles.hintCloseBtn}>✕</button>
-            </div>
-            <p style={styles.hintModalText}>{storylineHint}</p>
-          </div>
         </div>
       )}
 

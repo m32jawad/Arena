@@ -560,8 +560,9 @@ export default function SignUp() {
           </div>
 
           <button
-            className="w-full py-4 rounded-2xl text-lg font-semibold cursor-pointer border-none transition hover:opacity-90"
+            className="w-full py-4 rounded-2xl text-lg font-semibold cursor-pointer border-none transition hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed"
             style={btnStyle}
+            disabled={!selectedStoryline}
             onClick={() => setStep(3)}
           >
             Step 2 of 3
@@ -624,12 +625,17 @@ export default function SignUp() {
           className="w-full flex flex-col gap-[18px]"
           onSubmit={(e) => {
             e.preventDefault();
+            if (!partyName.trim() || !email.trim() || !teamSize) {
+              alert('Please fill in all fields: Party Name, Email, and Team Size.');
+              return;
+            }
             setStep(2);
           }}
         >
           <input
             type="text"
-            placeholder="Party Name"
+            placeholder="Party Name *"
+            required
             value={partyName}
             onChange={(e) => setPartyName(e.target.value)}
             className="w-full py-[18px] px-5 rounded-xl border border-white/10 text-base outline-none placeholder-opacity-60 box-border"
@@ -641,7 +647,8 @@ export default function SignUp() {
 
           <input
             type="email"
-            placeholder="Email"
+            placeholder="Email *"
+            required
             value={email}
             onChange={(e) => setEmail(e.target.value)}
             className="w-full py-[18px] px-5 rounded-xl border border-white/10 text-base outline-none placeholder-opacity-60 box-border"
@@ -654,6 +661,7 @@ export default function SignUp() {
           <select
             value={teamSize}
             onChange={(e) => setTeamSize(e.target.value)}
+            required
             className="w-full py-[18px] px-5 rounded-xl border border-white/10 text-base outline-none cursor-pointer box-border"
             style={{
               ...fieldStyle,

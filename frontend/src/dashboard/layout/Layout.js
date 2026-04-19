@@ -8,6 +8,8 @@ import {
   Search,
   Settings as SettingsIcon,
   LogOut,
+  ClipboardList,
+  Mail,
 } from "lucide-react";
 
 import { useAuth } from '../../context/AuthContext';
@@ -18,6 +20,8 @@ import Sessions from '../components/Sessions';
 import Stations from '../components/Stations';
 import Leaderboard from '../components/Leaderboard';
 import Settings from '../components/Settings';
+import AuditLog from '../components/AuditLog';
+import EmailSubscribers from '../components/EmailSubscribers';
 
 // NavItem used by Sidebar
 function NavItem({ icon, label, badge, active, status, onClick, theme }) {
@@ -146,6 +150,12 @@ export default function Layout() {
             {isSuperuser && (
               <NavItem theme={theme} icon={<Trophy size={20} />} label="Leaderboard" active={active==='Leaderboard'} onClick={() => handleTabChange('Leaderboard')} />
             )}
+            {isSuperuser && (
+              <NavItem theme={theme} icon={<ClipboardList size={20} />} label="Audit Log" active={active==='AuditLog'} onClick={() => handleTabChange('AuditLog')} />
+            )}
+            {isSuperuser && (
+              <NavItem theme={theme} icon={<Mail size={20} />} label="Email Subscribers" active={active==='EmailSubscribers'} onClick={() => handleTabChange('EmailSubscribers')} />
+            )}
           </nav>
         </div>
 
@@ -215,8 +225,10 @@ export default function Layout() {
           {active === 'Sessions' && <Sessions />}
           {active === 'Stations' && <Stations readOnly={!isSuperuser} />}
           {active === 'Leaderboard' && isSuperuser && <Leaderboard />}
+          {active === 'AuditLog' && isSuperuser && <AuditLog />}
+          {active === 'EmailSubscribers' && isSuperuser && <EmailSubscribers />}
           {active === 'Settings' && isSuperuser && <Settings />}
-          {active !== 'Dashboard' && active !== 'Pending' && active !== 'Sessions' && active !== 'Stations' && active !== 'Leaderboard' && active !== 'Settings' && (
+          {active !== 'Dashboard' && active !== 'Pending' && active !== 'Sessions' && active !== 'Stations' && active !== 'Leaderboard' && active !== 'AuditLog' && active !== 'EmailSubscribers' && active !== 'Settings' && (
             <div className="text-gray-500">{active} page content not implemented yet.</div>
           )}
         </div>

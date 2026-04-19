@@ -56,4 +56,11 @@ urlpatterns = [
     path('test/delete-team/<int:pk>/', views.test_delete_team, name='test-delete-team'),
     path('test/reset-all/', views.test_reset_all, name='test-reset-all'),
     path('public/controllers/', views.public_controllers, name='public-controllers'),
+
+    # Audit log
+    path('audit-logs/', views.audit_log_list, name='audit-log-list'),
+
+    # Email subscribers
+    path('email-subscribers/', views.email_subscribers, name='email-subscribers'),
+    path('email-subscribers/csv/', views.email_subscribers_csv, name='email-subscribers-csv'),
 ]

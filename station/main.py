@@ -59,6 +59,7 @@ class StationState:
         self.websocket_clients: List[WebSocket] = []
         self.station_ip: str = settings.station_ip if settings.station_ip else self._get_local_ip()
         self.boot_time: float = time.time()
+        self.last_hint_time: float = 0  # Cooldown tracking for hint button
         
         # Hardware components
         self.nfc_reader = None
@@ -388,6 +389,7 @@ async def process_rfid_scan(rfid_tag: str):
                     'current_controller_index': result.get('current_controller_index'),
                     'storyline_title': result.get('storyline_title'),
                     'storyline_hint': result.get('storyline_hint'),
+                    'hint_audio': result.get('hint_audio', ''),
                     'is_end_controller': result.get('is_end_controller', False),
                     'is_start_controller': result.get('is_start_controller', False),
                     'controller_name': result.get('controller_name', ''),
@@ -452,16 +454,26 @@ def handle_stop_button():
 
 
 def handle_hint_button():
-    """Handle hint button press — toggle hint on/off."""
+    """Handle hint button press — play hint audio with 10s cooldown."""
     logger.info(f"💡 Hint button pressed (station mode: {state.mode})")
     
     if state.mode == StationMode.ACTIVE and state.current_session:
+        # 10-second cooldown to prevent spamming
+        now = time.time()
+        if now - state.last_hint_time < 10:
+            remaining = int(10 - (now - state.last_hint_time))
+            logger.info(f"💡 Hint cooldown active ({remaining}s remaining)")
+            return
+        state.last_hint_time = now
+        
+        hint_audio = state.current_session.get('hint_audio', '')
         hint = state.current_session.get('storyline_hint')
         asyncio.create_task(state.broadcast({
             'type': 'button_press',
             'button': 'hint',
-            'action': 'toggle',
-            'hint': hint
+            'action': 'play_audio',
+            'hint': hint,
+            'hint_audio': hint_audio,
         }))
     else:
         logger.warning(f"Hint pressed but no active session (mode: {state.mode})")

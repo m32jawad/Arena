@@ -1,5 +1,6 @@
 from django.db import models
 from django.contrib.auth.models import User
+from django.utils import timezone
 
 
 class GeneralSetting(models.Model):
@@ -231,6 +232,10 @@ class Controller(models.Model):
         default=False,
         help_text='Whether this is the end/stop controller (last station)',
     )
+    hint_audio = models.FileField(
+        upload_to='hints/', blank=True, null=True,
+        help_text='Audio file played as hint when hint button is pressed at this station',
+    )
     cpu_usage = models.CharField(max_length=50, blank=True, default='')
     storage_usage = models.CharField(max_length=100, blank=True, default='')
     cpu_temperature = models.CharField(max_length=50, blank=True, default='')
@@ -295,4 +300,62 @@ class StaffProfile(models.Model):
 
     def __str__(self):
         return f'{self.user.username} - RFID Profile'
+
+
+class AuditLog(models.Model):
+    """Tracks admin/staff activity in the system."""
+    ACTION_CHOICES = [
+        ('signup_approved', 'Signup Approved'),
+        ('signup_rejected', 'Signup Rejected'),
+        ('session_ended', 'Session Ended'),
+        ('session_time_added', 'Session Time Added'),
+        ('session_time_reduced', 'Session Time Reduced'),
+        ('session_points_updated', 'Session Points Updated'),
+        ('checkpoint_added', 'Checkpoint Added'),
+        ('checkpoint_removed', 'Checkpoint Removed'),
+        ('staff_created', 'Staff Created'),
+        ('staff_updated', 'Staff Updated'),
+        ('staff_deleted', 'Staff Deleted'),
+        ('staff_blocked', 'Staff Blocked'),
+        ('staff_unblocked', 'Staff Unblocked'),
+        ('settings_updated', 'Settings Updated'),
+        ('controller_created', 'Controller Created'),
+        ('controller_updated', 'Controller Updated'),
+        ('controller_deleted', 'Controller Deleted'),
+        ('storyline_created', 'Storyline Created'),
+        ('storyline_updated', 'Storyline Updated'),
+        ('storyline_deleted', 'Storyline Deleted'),
+    ]
+
+    user = models.ForeignKey(
+        User, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='audit_logs',
+    )
+    action = models.CharField(max_length=50, choices=ACTION_CHOICES)
+    target_type = models.CharField(
+        max_length=50, blank=True, default='',
+        help_text='Type of object affected (e.g. PendingSignup, Controller)',
+    )
+    target_id = models.PositiveIntegerField(
+        null=True, blank=True,
+        help_text='ID of the affected object',
+    )
+    description = models.TextField(
+        blank=True, default='',
+        help_text='Human-readable description of the action',
+    )
+    metadata = models.JSONField(
+        default=dict, blank=True,
+        help_text='Additional structured data about the action',
+    )
+    created_at = models.DateTimeField(default=timezone.now)
+
+    class Meta:
+        ordering = ['-created_at']
+        verbose_name = 'Audit Log'
+        verbose_name_plural = 'Audit Logs'
+
+    def __str__(self):
+        username = self.user.username if self.user else 'System'
+        return f'{username} - {self.get_action_display()} - {self.created_at}'
 

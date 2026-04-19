@@ -203,13 +203,14 @@ export default function LeaderboardPage() {
   const [teams, setTeams] = useState([]);
   const [controllers, setControllers] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [filter, setFilter] = useState('active'); // 'active' (default), '7days', 'all'
   // Track which team IDs recently gained points for the glow flash
   const [scoredIds, setScoredIds] = useState(new Set());
   const prevScoresRef = useRef({});
 
   const fetchData = useCallback(() => {
     Promise.all([
-      fetch(`${API_BASE}/public/leaderboard/`).then((r) => r.json()).catch(() => []),
+      fetch(`${API_BASE}/public/leaderboard/?filter=${filter}`).then((r) => r.json()).catch(() => []),
       fetch(`${API_BASE}/public/controllers/`).then((r) => r.json()).catch(() => []),
     ]).then(([leaderboardData, controllerData]) => {
       if (Array.isArray(leaderboardData)) {
@@ -231,7 +232,7 @@ export default function LeaderboardPage() {
       if (Array.isArray(controllerData)) setControllers(controllerData);
       setLoading(false);
     });
-  }, []);
+  }, [filter]);
 
   /* Poll every 5 seconds for live updates */
   useEffect(() => {
@@ -276,11 +277,34 @@ export default function LeaderboardPage() {
       <VideoBg />
       {/* Title */}
       <h1
-        className="text-white text-4xl md:text-5xl font-extrabold tracking-wide mb-8 text-center uppercase"
+        className="text-white text-4xl md:text-5xl font-extrabold tracking-wide mb-4 text-center uppercase"
         style={{ fontFamily: "'Segoe UI', sans-serif", letterSpacing: "3px" }}
       >
         LEADERBOARD
       </h1>
+
+      {/* Filter Buttons */}
+      <div className="flex gap-2 mb-6">
+        {[
+          { key: 'active', label: 'Active Sessions' },
+          { key: '7days', label: 'Past 7 Days' },
+          { key: 'all', label: 'All Time' },
+        ].map((f) => (
+          <button
+            key={f.key}
+            onClick={() => setFilter(f.key)}
+            className="px-5 py-2 rounded-full text-sm font-semibold transition-all"
+            style={{
+              backgroundColor: filter === f.key ? 'rgba(217,70,239,0.8)' : 'rgba(255,255,255,0.1)',
+              color: filter === f.key ? '#fff' : 'rgba(255,255,255,0.6)',
+              border: filter === f.key ? '1px solid rgba(217,70,239,0.9)' : '1px solid rgba(255,255,255,0.15)',
+              cursor: 'pointer',
+            }}
+          >
+            {f.label}
+          </button>
+        ))}
+      </div>
 
       <motion.div layout className="w-full max-w-[500px] flex flex-col gap-3">
         <AnimatePresence mode="popLayout">

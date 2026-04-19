@@ -7,7 +7,19 @@ from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework import status
 
-from .models import Storyline, GeneralSetting, DashboardTheme, AppTheme, Controller, PendingSignup, Checkpoint, StaffProfile
+from .models import Storyline, GeneralSetting, DashboardTheme, AppTheme, Controller, PendingSignup, Checkpoint, StaffProfile, AuditLog
+
+
+def _log_action(user, action, target_type='', target_id=None, description='', metadata=None):
+    """Helper to create an audit log entry."""
+    AuditLog.objects.create(
+        user=user if user and user.is_authenticated else None,
+        action=action,
+        target_type=target_type,
+        target_id=target_id,
+        description=description,
+        metadata=metadata or {},
+    )
 
 
 @api_view(['GET'])
@@ -139,6 +151,7 @@ def staff_list_create(request):
         staff_profile.profile_picture = profile_picture
     staff_profile.save()
     
+    _log_action(request.user, 'staff_created', 'User', user.id, f'Created staff user "{username}"')
     return Response(_serialize_user(user, request), status=status.HTTP_201_CREATED)
 
 
@@ -178,11 +191,13 @@ def staff_detail(request, pk):
             staff_profile.profile_picture = profile_picture
         staff_profile.save()
         
+        _log_action(request.user, 'staff_updated', 'User', user.id, f'Updated staff user "{user.username}"')
         return Response(_serialize_user(user, request))
 
     if request.method == 'DELETE':
         if user.is_superuser:
             return Response({'error': 'Cannot delete a superuser.'}, status=status.HTTP_400_BAD_REQUEST)
+        _log_action(request.user, 'staff_deleted', 'User', user.id, f'Deleted staff user "{user.username}"')
         user.delete()
         return Response({'message': 'User deleted.'}, status=status.HTTP_204_NO_CONTENT)
 
@@ -200,6 +215,9 @@ def staff_toggle_block(request, pk):
 
     user.is_active = not user.is_active
     user.save()
+    action = 'staff_unblocked' if user.is_active else 'staff_blocked'
+    label = 'Unblocked' if user.is_active else 'Blocked'
+    _log_action(request.user, action, 'User', user.id, f'{label} user "{user.username}"')
     return Response(_serialize_user(user, request))
 
 
@@ -240,6 +258,7 @@ def general_settings_view(request):
     if 'allow_reduction' in data:
         gs.allow_reduction = data['allow_reduction']
     gs.save()
+    _log_action(request.user, 'settings_updated', 'GeneralSetting', 1, 'Updated general settings')
     return Response(_serialize_general_setting(gs))
 
 
@@ -286,6 +305,7 @@ def storyline_list_create(request):
         return Response({'error': 'Title is required.'}, status=status.HTTP_400_BAD_REQUEST)
 
     storyline = Storyline.objects.create(title=title, text=text, hint=hint, image=image)
+    _log_action(request.user, 'storyline_created', 'Storyline', storyline.id, f'Created storyline "{title}"')
     return Response(_serialize_storyline(storyline, request), status=status.HTTP_201_CREATED)
 
 
@@ -318,9 +338,11 @@ def storyline_detail(request, pk):
         if image:
             storyline.image = image
         storyline.save()
+        _log_action(request.user, 'storyline_updated', 'Storyline', storyline.id, f'Updated storyline "{storyline.title}"')
         return Response(_serialize_storyline(storyline, request))
 
     if request.method == 'DELETE':
+        _log_action(request.user, 'storyline_deleted', 'Storyline', storyline.id, f'Deleted storyline "{storyline.title}"')
         storyline.delete()
         return Response({'message': 'Storyline deleted.'}, status=status.HTTP_204_NO_CONTENT)
 
@@ -446,13 +468,17 @@ def app_theme_view(request):
 
 # ── Controller CRUD ──
 
-def _serialize_controller(c):
+def _serialize_controller(c, request=None):
+    hint_audio_url = ''
+    if c.hint_audio:
+        hint_audio_url = request.build_absolute_uri(c.hint_audio.url) if request else c.hint_audio.url
     return {
         'id': c.id,
         'name': c.name,
         'ip_address': c.ip_address,
         'is_start': c.is_start,
         'is_end': c.is_end,
+        'hint_audio': hint_audio_url,
         'cpu_usage': c.cpu_usage,
         'storage_usage': c.storage_usage,
         'cpu_temperature': c.cpu_temperature,
@@ -464,10 +490,11 @@ def _serialize_controller(c):
 
 @api_view(['GET', 'POST'])
 @permission_classes([IsAuthenticated])
+@parser_classes([MultiPartParser, FormParser])
 def controller_list_create(request):
     if request.method == 'GET':
         controllers = Controller.objects.all()
-        return Response([_serialize_controller(c) for c in controllers])
+        return Response([_serialize_controller(c, request) for c in controllers])
 
     # POST — only superusers may create
     if not request.user.is_superuser:
@@ -499,11 +526,17 @@ def controller_list_create(request):
         system_uptime=data.get('system_uptime', ''),
         voltage_power_status=data.get('voltage_power_status', ''),
     )
-    return Response(_serialize_controller(controller), status=status.HTTP_201_CREATED)
+    hint_audio = request.FILES.get('hint_audio')
+    if hint_audio:
+        controller.hint_audio = hint_audio
+        controller.save(update_fields=['hint_audio'])
+    _log_action(request.user, 'controller_created', 'Controller', controller.id, f'Created controller "{name}"')
+    return Response(_serialize_controller(controller, request), status=status.HTTP_201_CREATED)
 
 
 @api_view(['GET', 'PUT', 'DELETE'])
 @permission_classes([IsAuthenticated])
+@parser_classes([MultiPartParser, FormParser])
 def controller_detail(request, pk):
     try:
         controller = Controller.objects.get(pk=pk)
@@ -511,7 +544,7 @@ def controller_detail(request, pk):
         return Response({'error': 'Controller not found.'}, status=status.HTTP_404_NOT_FOUND)
 
     if request.method == 'GET':
-        return Response(_serialize_controller(controller))
+        return Response(_serialize_controller(controller, request))
 
     # PUT / DELETE — only superusers
     if not request.user.is_superuser:
@@ -533,10 +566,17 @@ def controller_detail(request, pk):
         controller.ram_usage = data.get('ram_usage', controller.ram_usage)
         controller.system_uptime = data.get('system_uptime', controller.system_uptime)
         controller.voltage_power_status = data.get('voltage_power_status', controller.voltage_power_status)
+        hint_audio = request.FILES.get('hint_audio')
+        if hint_audio:
+            controller.hint_audio = hint_audio
+        if data.get('clear_hint_audio') == 'true':
+            controller.hint_audio = None
         controller.save()
-        return Response(_serialize_controller(controller))
+        _log_action(request.user, 'controller_updated', 'Controller', controller.id, f'Updated controller "{controller.name}"')
+        return Response(_serialize_controller(controller, request))
 
     if request.method == 'DELETE':
+        _log_action(request.user, 'controller_deleted', 'Controller', controller.id, f'Deleted controller "{controller.name}"')
         controller.delete()
         return Response({'message': 'Controller deleted.'}, status=status.HTTP_204_NO_CONTENT)
 
@@ -712,9 +752,23 @@ def pending_approve(request, pk):
             pass
 
     from django.utils import timezone
+    # Check for duplicate RFID tag on active sessions
+    if rfid_tag:
+        existing = PendingSignup.objects.filter(
+            rfid_tag=rfid_tag, status='approved'
+        ).exclude(pk=pk).first()
+        if existing:
+            return Response(
+                {'error': f'This RFID is already assigned to team "{existing.party_name}" (active session).'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
     p.status = 'approved'
     p.approved_at = timezone.now()
     p.save()
+    _log_action(request.user, 'signup_approved', 'PendingSignup', p.id,
+                f'Approved signup "{p.party_name}" with RFID {p.rfid_tag}',
+                {'rfid_tag': p.rfid_tag, 'session_minutes': p.session_minutes})
     return Response(_serialize_pending(p, request))
 
 
@@ -826,6 +880,8 @@ def end_session(request, pk):
     p.status = 'ended'
     p.ended_at = timezone.now()
     p.save(update_fields=['status', 'ended_at', 'total_elapsed_seconds', 'is_playing', 'last_started_at'])
+    _log_action(request.user, 'session_ended', 'PendingSignup', p.id,
+                f'Manually ended session "{p.party_name}"')
     return Response({'message': 'Session ended.'})
 
 
@@ -869,6 +925,26 @@ def update_session(request, pk):
         except (ValueError, TypeError):
             pass
     p.save()
+
+    # Audit log for time changes
+    if 'extra_minutes' in data:
+        try:
+            extra = int(data['extra_minutes'])
+            if extra > 0:
+                _log_action(request.user, 'session_time_added', 'PendingSignup', p.id,
+                            f'Added {extra} minutes to "{p.party_name}"',
+                            {'extra_minutes': extra, 'new_total': p.session_minutes})
+            elif extra < 0:
+                _log_action(request.user, 'session_time_reduced', 'PendingSignup', p.id,
+                            f'Reduced {abs(extra)} minutes from "{p.party_name}"',
+                            {'extra_minutes': extra, 'new_total': p.session_minutes})
+        except (ValueError, TypeError):
+            pass
+    if 'points' in data:
+        _log_action(request.user, 'session_points_updated', 'PendingSignup', p.id,
+                    f'Updated points for "{p.party_name}" to {p.points}',
+                    {'new_points': p.points})
+
     return Response(_serialize_pending(p, request))
 
 
@@ -884,6 +960,8 @@ def pending_reject(request, pk):
         return Response({'error': 'Not found.'}, status=status.HTTP_404_NOT_FOUND)
     p.status = 'rejected'
     p.save()
+    _log_action(request.user, 'signup_rejected', 'PendingSignup', p.id,
+                f'Rejected signup "{p.party_name}"')
     return Response({'message': 'Rejected.'})
 
 
@@ -937,6 +1015,10 @@ def add_checkpoint(request, pk):
         session.points += points_earned
         session.save(update_fields=['points'])
         
+        _log_action(request.user, 'checkpoint_added', 'Checkpoint', checkpoint.id,
+                    f'Added checkpoint at "{controller.name}" for "{session.party_name}"',
+                    {'controller_id': controller.id, 'points_earned': points_earned})
+        
         return Response({
             'message': 'Checkpoint added.',
             'checkpoint': {
@@ -986,6 +1068,10 @@ def remove_checkpoint(request, pk, checkpoint_id):
     if checkpoint.points_earned > 0:
         session.points = max(0, session.points - checkpoint.points_earned)
         session.save(update_fields=['points'])
+    
+    _log_action(request.user, 'checkpoint_removed', 'Checkpoint', checkpoint_id,
+                f'Removed checkpoint at "{checkpoint.controller.name}" from "{session.party_name}"',
+                {'controller_id': checkpoint.controller.id, 'points_deducted': checkpoint.points_earned})
     
     checkpoint.delete()
     return Response({
@@ -1088,6 +1174,7 @@ def rfid_start_session(request):
         'is_end_controller': controller.is_end if controller else False,
         'is_start_controller': controller.is_start if controller else False,
         'controller_name': controller.name if controller else '',
+        'hint_audio': request.build_absolute_uri(controller.hint_audio.url) if (controller and controller.hint_audio) else '',
     })
 
 
@@ -1442,32 +1529,18 @@ def station_recent_scans(request):
     from django.db.models import Q
     from django.utils import timezone
 
-    # Fetch the most recently started/ended sessions (approved or ended),
-    # ordered by the most recent activity timestamp.
-    sessions = (
-        PendingSignup.objects
-        .filter(
-            Q(status='ended') | Q(status='approved'),
-            last_started_at__isnull=False,
-        )
-        .order_by('-last_started_at')[:limit * 4]   # over-fetch to ensure we get enough after dedup
+    # Fetch sessions that actually played at THIS specific station
+    # by looking at checkpoints for this controller.
+    checkpoint_sessions = (
+        Checkpoint.objects
+        .filter(controller=controller)
+        .select_related('session')
+        .order_by('-cleared_at')[:limit]
     )
 
-    # If no last_started_at, fall back to ended_at or approved_at ordering
-    if not sessions.exists():
-        sessions = (
-            PendingSignup.objects
-            .filter(Q(status='ended') | Q(status='approved'))
-            .order_by('-ended_at', '-approved_at')[:limit * 4]
-        )
-
     recent = []
-    seen_ids = set()
-    for p in sessions:
-        if p.id in seen_ids:
-            continue
-        seen_ids.add(p.id)
-        activity_time = p.last_started_at or p.ended_at or p.approved_at
+    for cp in checkpoint_sessions:
+        p = cp.session
         recent.append({
             'session_id': p.id,
             'party_name': p.party_name,
@@ -1475,11 +1548,9 @@ def station_recent_scans(request):
             'points': p.points,
             'avatar_id': p.avatar_id,
             'profile_photo': request.build_absolute_uri(p.profile_photo.url) if p.profile_photo else '',
-            'played_at': activity_time.isoformat() if activity_time else '',
-            'points_earned': p.points,
+            'played_at': cp.cleared_at.isoformat() if cp.cleared_at else '',
+            'points_earned': cp.points_earned,
         })
-        if len(recent) >= limit:
-            break
 
     return Response({
         'controller_id': controller.id,
@@ -1501,10 +1572,24 @@ def public_leaderboard(request):
     now = timezone.now()
     total_controllers = Controller.objects.count()
 
-    # Include both live (approved) and ended sessions
-    sessions = PendingSignup.objects.filter(
-        status__in=['approved', 'ended']
-    ).order_by('-points', 'created_at')
+    # Filter parameter: 'active', '7days', 'all' (default: all)
+    time_filter = request.query_params.get('filter', 'all')
+
+    if time_filter == 'active':
+        sessions = PendingSignup.objects.filter(
+            status='approved'
+        ).order_by('-points', 'created_at')
+    elif time_filter == '7days':
+        seven_days_ago = now - timedelta(days=7)
+        sessions = PendingSignup.objects.filter(
+            status__in=['approved', 'ended'],
+            created_at__gte=seven_days_ago,
+        ).order_by('-points', 'created_at')
+    else:
+        # 'all' — include both live and ended
+        sessions = PendingSignup.objects.filter(
+            status__in=['approved', 'ended']
+        ).order_by('-points', 'created_at')
 
     result = []
     for p in sessions:
@@ -1572,6 +1657,7 @@ def public_controllers(request):
             'station_port': c.station_port,
             'is_start': c.is_start,
             'is_end': c.is_end,
+            'hint_audio': request.build_absolute_uri(c.hint_audio.url) if c.hint_audio else '',
         }
         for c in controllers
     ])
@@ -1668,3 +1754,88 @@ def leaderboard_test_page(request):
     """Serve the leaderboard test page."""
     from django.shortcuts import render
     return render(request, 'leaderboard_test.html')
+
+
+# ── Audit Log ──
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def audit_log_list(request):
+    """Return the audit log entries, newest first."""
+    if not request.user.is_superuser:
+        return Response({'error': 'Permission denied.'}, status=status.HTTP_403_FORBIDDEN)
+
+    limit = int(request.query_params.get('limit', 100))
+    logs = AuditLog.objects.select_related('user').order_by('-created_at')[:limit]
+
+    return Response([
+        {
+            'id': log.id,
+            'user': log.user.username if log.user else 'System',
+            'action': log.action,
+            'action_display': log.get_action_display(),
+            'target_type': log.target_type,
+            'target_id': log.target_id,
+            'description': log.description,
+            'metadata': log.metadata,
+            'created_at': log.created_at.isoformat(),
+        }
+        for log in logs
+    ])
+
+
+# ── Email Subscribers ──
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def email_subscribers(request):
+    """Return all signups that opted in to receive offers."""
+    if not request.user.is_superuser:
+        return Response({'error': 'Permission denied.'}, status=status.HTTP_403_FORBIDDEN)
+
+    signups = PendingSignup.objects.filter(
+        receive_offers=True,
+    ).exclude(email='').order_by('-created_at')
+
+    return Response([
+        {
+            'id': s.id,
+            'party_name': s.party_name,
+            'email': s.email,
+            'team_size': s.team_size,
+            'status': s.status,
+            'created_at': s.created_at.isoformat() if s.created_at else '',
+        }
+        for s in signups
+    ])
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def email_subscribers_csv(request):
+    """Export email subscribers as a CSV file."""
+    if not request.user.is_superuser:
+        return Response({'error': 'Permission denied.'}, status=status.HTTP_403_FORBIDDEN)
+
+    import csv
+    from django.http import HttpResponse
+
+    signups = PendingSignup.objects.filter(
+        receive_offers=True,
+    ).exclude(email='').order_by('-created_at')
+
+    response = HttpResponse(content_type='text/csv')
+    response['Content-Disposition'] = 'attachment; filename="email_subscribers.csv"'
+
+    writer = csv.writer(response)
+    writer.writerow(['Party Name', 'Email', 'Team Size', 'Status', 'Signed Up'])
+    for s in signups:
+        writer.writerow([
+            s.party_name,
+            s.email,
+            s.team_size,
+            s.status,
+            s.created_at.strftime('%Y-%m-%d %H:%M') if s.created_at else '',
+        ])
+
+    return response

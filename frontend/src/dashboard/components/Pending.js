@@ -86,6 +86,7 @@ const Pending = () => {
   const [modalItem, setModalItem] = useState(null);
   const [modalRfid, setModalRfid] = useState('');
   const [modalMinutes, setModalMinutes] = useState(10);
+  const [modalError, setModalError] = useState('');
 
   /* Fetch pending signups from API */
   const fetchPending = useCallback(async () => {
@@ -134,11 +135,17 @@ const Pending = () => {
     setModalItem(item);
     setModalRfid(item.rfid_tag || '');
     setModalMinutes(defaultSessionLength);
+    setModalError('');
   };
 
   /* Approve with RFID & time */
   const handleApprove = async () => {
     if (!modalItem) return;
+    if (!String(modalRfid || '').trim()) {
+      setModalError('RFID is required before approving this session.');
+      return;
+    }
+
     try {
       const res = await fetch(`${API_BASE}/pending/${modalItem.id}/approve/`, {
         method: 'POST',
@@ -155,6 +162,9 @@ const Pending = () => {
       if (res.ok) {
         setPendingApprovals((prev) => prev.filter((p) => p.id !== modalItem.id));
         setModalItem(null);
+      } else {
+        const data = await res.json();
+        setModalError(data.error || 'Could not approve session.');
       }
     } catch { /* ignore */ }
   };
@@ -164,6 +174,7 @@ const Pending = () => {
     if (!modalItem) return;
     await handleDelete(modalItem.id);
     setModalItem(null);
+    setModalError('');
   };
 
   /* Reject / Delete */
@@ -423,7 +434,10 @@ const Pending = () => {
                     type="text"
                     placeholder="Enter RFID TAG ID"
                     value={modalRfid}
-                    onChange={(e) => setModalRfid(e.target.value)}
+                    onChange={(e) => {
+                      setModalRfid(e.target.value);
+                      if (modalError) setModalError('');
+                    }}
                     className="w-full py-2.5 px-4 rounded-lg border text-sm outline-none mb-3"
                     style={{
                       backgroundColor: theme.sidebar_bg,
@@ -431,6 +445,12 @@ const Pending = () => {
                       color: theme.sidebar_active_text,
                     }}
                   />
+
+                  {modalError && (
+                    <div className="text-sm mb-3" style={{ color: '#ef4444' }}>
+                      {modalError}
+                    </div>
+                  )}
 
                   {/* Time stepper */}
                   <div className="flex items-center gap-2">

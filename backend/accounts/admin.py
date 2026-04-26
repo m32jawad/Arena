@@ -4,7 +4,15 @@ from .models import GeneralSetting, DashboardTheme, Storyline, PendingSignup, Co
 
 @admin.register(GeneralSetting)
 class GeneralSettingAdmin(admin.ModelAdmin):
-    list_display = ('arena_name', 'time_zone', 'session_length', 'updated_at')
+    list_display = (
+        'arena_name',
+        'time_zone',
+        'session_length',
+        'leaderboard_default_filter',
+        'leaderboard_auto_rotate',
+        'leaderboard_rotation_minutes',
+        'updated_at',
+    )
 
 
 @admin.register(DashboardTheme)
@@ -27,7 +35,7 @@ class PendingSignupAdmin(admin.ModelAdmin):
 
 @admin.register(Controller)
 class ControllerAdmin(admin.ModelAdmin):
-    list_display = ('name', 'ip_address', 'cpu_usage', 'cpu_temperature', 'updated_at')
+    list_display = ('name', 'ip_address', 'station_minutes', 'cpu_usage', 'cpu_temperature', 'updated_at')
     search_fields = ('name', 'ip_address')
 
 

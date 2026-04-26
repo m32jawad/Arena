@@ -47,6 +47,7 @@ urlpatterns = [
 
     # Public leaderboard
     path('public/leaderboard/', views.public_leaderboard, name='public-leaderboard'),
+    path('public/leaderboard-settings/', views.public_leaderboard_settings, name='public-leaderboard-settings'),
 
     # Leaderboard test page
     path('leaderboard-test/', views.leaderboard_test_page, name='leaderboard-test'),

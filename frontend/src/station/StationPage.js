@@ -10,6 +10,18 @@ if (typeof document !== 'undefined' && !document.getElementById('station-pulse-c
       0%, 100% { opacity: 1; transform: scale(1); }
       50% { opacity: 0.5; transform: scale(1.1); }
     }
+    @keyframes hint-bar {
+      0%, 100% { transform: scaleY(0.45); opacity: 0.55; }
+      50% { transform: scaleY(1); opacity: 1; }
+    }
+    @keyframes hint-popup-in {
+      0% { opacity: 0; transform: translateY(-14px) scale(0.96); }
+      100% { opacity: 1; transform: translateY(0) scale(1); }
+    }
+    @keyframes hint-glow {
+      0%, 100% { box-shadow: 0 0 0 0 rgba(251,191,36,0.28); }
+      50% { box-shadow: 0 0 0 14px rgba(251,191,36,0); }
+    }
   `;
   document.head.appendChild(style);
 }
@@ -137,7 +149,7 @@ export default function StationPage() {
   const [stopping,       setStopping]       = useState(false);
   const [storylineHint,  setStorylineHint]  = useState('');
   const [hintAudioUrl,   setHintAudioUrl]   = useState('');
-  const [hintCooldown,   setHintCooldown]   = useState(false);
+  const [hintPlaying,    setHintPlaying]    = useState(false);
 
   // RESULT
   const [result,      setResult]      = useState(null);
@@ -435,6 +447,7 @@ export default function StationPage() {
                 setSession(null);
                 setHintAudioUrl('');
                 if (hintAudioRef.current) { hintAudioRef.current.pause(); hintAudioRef.current = null; }
+                setHintPlaying(false);
                 clearInterval(countdownRef.current);
                 break;
 
@@ -450,6 +463,7 @@ export default function StationPage() {
                 setStorylineHint('');
                 setHintAudioUrl('');
                 if (hintAudioRef.current) { hintAudioRef.current.pause(); hintAudioRef.current = null; }
+                setHintPlaying(false);
                 setAppState(STATES.READY);
                 break;
 
@@ -457,20 +471,9 @@ export default function StationPage() {
                 // Hardware button pressed
                 console.log('🔘 Button press:', data.button);
                 if (data.button === 'hint') {
-                  const audioUrl = data.hint_audio;
+                  const audioUrl = data.hint_audio || hintAudioUrl;
                   if (audioUrl) {
-                    // Play hint audio in background
-                    try {
-                      if (hintAudioRef.current) {
-                        hintAudioRef.current.pause();
-                        hintAudioRef.current = null;
-                      }
-                      const audio = new Audio(audioUrl);
-                      hintAudioRef.current = audio;
-                      audio.play().catch(err => console.error('Audio play failed:', err));
-                    } catch (err) {
-                      console.error('Failed to play hint audio:', err);
-                    }
+                    playHintAudio(audioUrl);
                   }
                   if (data.hint) {
                     setStorylineHint(data.hint);
@@ -552,6 +555,32 @@ export default function StationPage() {
   }, [selectedCtrl]); // Only reconnect when station changes, NOT on appState change
 
   // ── helpers ──────────────────────────────────
+  const playHintAudio = useCallback((audioUrl) => {
+    if (!audioUrl) return;
+
+    try {
+      if (hintAudioRef.current) {
+        hintAudioRef.current.pause();
+        hintAudioRef.current = null;
+      }
+
+      const audio = new Audio(audioUrl);
+      audio.onplay = () => setHintPlaying(true);
+      audio.onpause = () => setHintPlaying(false);
+      audio.onended = () => setHintPlaying(false);
+      audio.onerror = () => setHintPlaying(false);
+
+      hintAudioRef.current = audio;
+      audio.play().catch(err => {
+        console.error('Audio play failed:', err);
+        setHintPlaying(false);
+      });
+    } catch (err) {
+      console.error('Failed to play hint audio:', err);
+      setHintPlaying(false);
+    }
+  }, []);
+
   async function doStop(sess) {
     if (!sess) return;
     clearInterval(countdownRef.current);
@@ -662,6 +691,7 @@ export default function StationPage() {
         setRfidInput(''); setRfidError('');
         setStorylineHint(''); setHintAudioUrl('');
         if (hintAudioRef.current) { hintAudioRef.current.pause(); hintAudioRef.current = null; }
+        setHintPlaying(false);
         setAppState(STATES.READY);
       } else {
         setStaffError(data.error || 'Not a valid staff RFID.');
@@ -798,7 +828,7 @@ export default function StationPage() {
                   <span style={styles.recentRank}>#{i + 1}</span>
                   <RecentAvatar scan={scan} />
                   <span style={styles.recentName}>{scan.party_name}</span>
-                  <span style={styles.recentPts}>{scan.points} pts</span>
+                  <span style={styles.recentPts}>{scan.points_earned ?? scan.station_points ?? scan.points} pts</span>
                 </div>
               ))}
             </div>
@@ -827,41 +857,28 @@ export default function StationPage() {
           <button
             onClick={handleStopSession}
             disabled={stopping}
-            style={{ ...styles.stopBtn, opacity: stopping ? 0.5 : 1 }}
+            style={{ ...styles.stopBtn, opacity: stopping ? 0.5 : 1, display: 'none'}}
           >
             {stopping ? 'Stopping…' : 'STOP'}
           </button>
 
-          <button
-            onClick={() => {
-              if (hintCooldown) return;
-              // Play hint audio in background
-              if (hintAudioUrl) {
-                try {
-                  if (hintAudioRef.current) {
-                    hintAudioRef.current.pause();
-                    hintAudioRef.current = null;
-                  }
-                  const audio = new Audio(hintAudioUrl);
-                  hintAudioRef.current = audio;
-                  audio.play().catch(err => console.error('Audio play failed:', err));
-                } catch (err) {
-                  console.error('Failed to play hint audio:', err);
-                }
-              }
-              // 10s cooldown
-              setHintCooldown(true);
-              setTimeout(() => setHintCooldown(false), 10000);
-            }}
-            style={{
-              ...styles.hintBtn,
-              opacity: (hintAudioUrl || storylineHint) && !hintCooldown ? 1 : 0.35,
-              cursor: (hintAudioUrl || storylineHint) && !hintCooldown ? 'pointer' : 'default',
-            }}
-            title={hintCooldown ? 'Cooldown active…' : (hintAudioUrl ? 'Play hint audio' : 'No hint for this station')}
-          >
-            💡 {hintCooldown ? 'WAIT…' : 'HINT'}
-          </button>
+          {hintPlaying && (
+            <div style={styles.hintPopup}>
+              <div style={styles.hintPopupIcon}>💡</div>
+              <div style={styles.hintPopupTextWrap}>
+                <span style={styles.hintPlayingLabel}>HINT PLAYING</span>
+                {storylineHint && (
+                  <span style={styles.hintPlayingSubtext}>{storylineHint}</span>
+                )}
+              </div>
+              <div style={styles.hintBars}>
+                <span style={{ ...styles.hintBar, animationDelay: '0s' }} />
+                <span style={{ ...styles.hintBar, animationDelay: '0.12s' }} />
+                <span style={{ ...styles.hintBar, animationDelay: '0.24s' }} />
+                <span style={{ ...styles.hintBar, animationDelay: '0.36s' }} />
+              </div>
+            </div>
+          )}
         </div>
       )}
 
@@ -911,7 +928,7 @@ export default function StationPage() {
             <div style={styles.staffBox}>
               <p style={styles.staffHeading}>STAFF — SCAN YOUR RFID TAG TO RESET STATION</p>
               <div style={styles.scanPulse}>
-                <div style={styles.scanIcon}>👮</div>
+                <div style={styles.scanIcon}></div>
                 <p style={styles.scanText}>Waiting for staff card…</p>
               </div>
               {rfidError && (
@@ -1284,6 +1301,71 @@ const styles = {
     marginTop: 4,
     backdropFilter: 'blur(8px)',
     transition: 'background 0.2s, border-color 0.2s',
+  },
+  hintPopup: {
+    position: 'fixed',
+    top: 28,
+    left: '50%',
+    transform: 'translateX(-50%)',
+    zIndex: 30,
+    display: 'flex',
+    alignItems: 'center',
+    gap: 12,
+    padding: '10px 16px',
+    borderRadius: 999,
+    backgroundColor: 'rgba(20,14,6,0.9)',
+    border: '1px solid rgba(251,191,36,0.55)',
+    backdropFilter: 'blur(10px)',
+    animation: 'hint-popup-in 220ms ease-out',
+  },
+  hintPopupIcon: {
+    width: 30,
+    height: 30,
+    borderRadius: '50%',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    fontSize: 16,
+    backgroundColor: 'rgba(251,191,36,0.2)',
+    animation: 'hint-glow 1.1s ease-out infinite',
+  },
+  hintPlayingLabel: {
+    color: '#fbbf24',
+    fontSize: 12,
+    fontWeight: 800,
+    letterSpacing: '0.14em',
+    whiteSpace: 'nowrap',
+  },
+  hintPopupTextWrap: {
+    display: 'flex',
+    flexDirection: 'column',
+    alignItems: 'flex-start',
+    gap: 2,
+    maxWidth: 360,
+  },
+  hintPlayingSubtext: {
+    color: 'rgba(255,255,255,0.78)',
+    fontSize: 11,
+    fontWeight: 500,
+    letterSpacing: '0.02em',
+    overflow: 'hidden',
+    textOverflow: 'ellipsis',
+    whiteSpace: 'nowrap',
+    maxWidth: 300,
+  },
+  hintBars: {
+    display: 'flex',
+    alignItems: 'flex-end',
+    gap: 3,
+    height: 14,
+  },
+  hintBar: {
+    width: 3,
+    height: 14,
+    borderRadius: 3,
+    backgroundColor: '#fbbf24',
+    transformOrigin: 'bottom',
+    animation: 'hint-bar 0.8s ease-in-out infinite',
   },
   hintOverlay: {
     position: 'fixed',

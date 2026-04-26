@@ -79,6 +79,9 @@ const Sessions = () => {
   const [editItem, setEditItem] = useState(null);
   const [extraMinutes, setExtraMinutes] = useState(0);
   const [liveRemaining, setLiveRemaining] = useState(0);
+  const [editRfidTag, setEditRfidTag] = useState('');
+  const [editRfidOriginal, setEditRfidOriginal] = useState('');
+  const [editError, setEditError] = useState('');
   const editTimerRef = useRef(null);
 
   /* Fetch controllers */
@@ -153,6 +156,10 @@ const Sessions = () => {
     setEditItem(session);
     setExtraMinutes(0);
     setLiveRemaining(session.remaining_minutes || 0);
+    setEditError('');
+    const existingRfid = session.rfid_tag || '';
+    setEditRfidTag(existingRfid);
+    setEditRfidOriginal(existingRfid);
   };
 
   /* Real-time countdown while modal is open */
@@ -176,9 +183,21 @@ const Sessions = () => {
   /* Update session — send extra minutes to add or subtract */
   const handleUpdateSession = async () => {
     if (!editItem) return;
-    if (extraMinutes === 0) { setEditItem(null); return; }
+    const trimmedRfid = String(editRfidTag || '').trim();
+    const rfidChanged = trimmedRfid !== String(editRfidOriginal || '').trim();
+
+    if (extraMinutes === 0 && !rfidChanged) { setEditItem(null); return; }
     if (extraMinutes > 0 && !allowExtension) { setEditItem(null); return; }
     if (extraMinutes < 0 && !allowReduction) { setEditItem(null); return; }
+    if (rfidChanged && !trimmedRfid) {
+      setEditError('RFID cannot be empty.');
+      return;
+    }
+
+    const payload = {};
+    if (extraMinutes !== 0) payload.extra_minutes = extraMinutes;
+    if (rfidChanged) payload.rfid_tag = trimmedRfid;
+
     try {
       const res = await fetch(`${API_BASE}/sessions/${editItem.id}/update/`, {
         method: 'PUT',
@@ -187,13 +206,18 @@ const Sessions = () => {
           'Content-Type': 'application/json',
           'X-CSRFToken': getCookie('csrftoken'),
         },
-        body: JSON.stringify({ extra_minutes: extraMinutes }),
+        body: JSON.stringify(payload),
       });
       if (res.ok) {
         fetchLive();
         setEditItem(null);
+      } else {
+        const data = await res.json();
+        setEditError(data.error || 'Could not update session.');
       }
-    } catch { /* ignore */ }
+    } catch {
+      setEditError('Could not update session.');
+    }
   };
 
   /* Toggle checkpoint — add or remove */
@@ -498,8 +522,23 @@ const Sessions = () => {
                 {/* Info — right side */}
                 <div className="flex-1 min-w-0 pt-1">
                   {/* RFID */}
-                  <div className="text-xs font-medium mb-1" style={{ color: theme.sidebar_text }}>
-                    RFID # {editItem.rfid_tag || '—'}
+                  <div className="mb-2">
+                    <div className="text-xs font-medium mb-1" style={{ color: theme.sidebar_text }}>RFID</div>
+                    <input
+                      type="text"
+                      value={editRfidTag}
+                      onChange={(e) => {
+                        setEditRfidTag(e.target.value);
+                        if (editError) setEditError('');
+                      }}
+                      placeholder="Enter RFID tag"
+                      className="w-full py-2 px-3 rounded-lg border text-sm outline-none"
+                      style={{
+                        backgroundColor: theme.sidebar_bg,
+                        borderColor: theme.sidebar_active_bg,
+                        color: theme.sidebar_active_text,
+                      }}
+                    />
                   </div>
 
                   {/* Name + members */}
@@ -587,6 +626,12 @@ const Sessions = () => {
                   </button>
                 </div>
               </div>
+
+              {editError && (
+                <div className="mt-4 text-sm" style={{ color: '#ef4444' }}>
+                  {editError}
+                </div>
+              )}
             </div>
 
             {/* Footer buttons */}

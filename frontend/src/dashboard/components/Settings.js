@@ -38,6 +38,9 @@ const Settings = () => {
   const [sessionPresets, setSessionPresets] = useState('');
   const [allowExtension, setAllowExtension] = useState(false);
   const [allowReduction, setAllowReduction] = useState(false);
+  const [leaderboardDefaultFilter, setLeaderboardDefaultFilter] = useState('active');
+  const [leaderboardAutoRotate, setLeaderboardAutoRotate] = useState(false);
+  const [leaderboardRotationMinutes, setLeaderboardRotationMinutes] = useState('1');
   const [generalLoading, setGeneralLoading] = useState(false);
   const [generalError, setGeneralError] = useState('');
   const [generalSuccess, setGeneralSuccess] = useState('');
@@ -279,6 +282,9 @@ const Settings = () => {
       setSessionPresets(data.session_presets || '');
       setAllowExtension(data.allow_extension || false);
       setAllowReduction(data.allow_reduction || false);
+      setLeaderboardDefaultFilter(data.leaderboard_default_filter || 'active');
+      setLeaderboardAutoRotate(data.leaderboard_auto_rotate || false);
+      setLeaderboardRotationMinutes(String(data.leaderboard_rotation_minutes || 1));
     } catch (err) {
       setGeneralError(err.message);
     } finally {
@@ -302,6 +308,9 @@ const Settings = () => {
         session_presets: sessionPresets,
         allow_extension: allowExtension,
         allow_reduction: allowReduction,
+        leaderboard_default_filter: leaderboardDefaultFilter,
+        leaderboard_auto_rotate: leaderboardAutoRotate,
+        leaderboard_rotation_minutes: Math.max(1, parseInt(leaderboardRotationMinutes, 10) || 1),
       };
       await apiFetch(`${API_BASE}/general-settings/`, {
         method: 'PUT',
@@ -632,6 +641,37 @@ const Settings = () => {
                 <option value="on">On</option>
                 <option value="off">Off</option>
               </select>
+            </div>
+
+            <div>
+              <label className="text-xs" style={labelSt}>Leaderboard Default View</label>
+              <select value={leaderboardDefaultFilter} onChange={(e) => setLeaderboardDefaultFilter(e.target.value)} className="w-full mt-2 p-2 border rounded" style={inputSt}>
+                <option value="active">Active Sessions</option>
+                <option value="7days">Past 7 Days</option>
+                <option value="all">All Time</option>
+              </select>
+            </div>
+
+            <div>
+              <label className="text-xs" style={labelSt}>Leaderboard Auto Rotation</label>
+              <select value={leaderboardAutoRotate ? 'on' : 'off'} onChange={(e) => setLeaderboardAutoRotate(e.target.value === 'on')} className="w-full mt-2 p-2 border rounded" style={inputSt}>
+                <option value="on">On</option>
+                <option value="off">Off</option>
+              </select>
+            </div>
+
+            <div className="col-span-2">
+              <label className="text-xs" style={labelSt}>Auto Rotation Interval (minutes)</label>
+              <input
+                type="number"
+                min="1"
+                step="1"
+                value={leaderboardRotationMinutes}
+                onChange={(e) => setLeaderboardRotationMinutes(e.target.value)}
+                placeholder="1"
+                className="w-full mt-2 p-2 border rounded"
+                style={inputSt}
+              />
             </div>
           </div>
           )}

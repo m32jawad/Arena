@@ -22,6 +22,15 @@ def _log_action(user, action, target_type='', target_id=None, description='', me
     )
 
 
+def _get_station_seconds(session, controller=None):
+    """Return station duration in seconds for a specific controller."""
+    if controller and getattr(controller, 'station_minutes', None):
+        return max(1, int(controller.station_minutes) * 60)
+
+    total_controllers = Controller.objects.count() or 1
+    return max(1, (session.session_minutes * 60) // total_controllers)
+
+
 @api_view(['GET'])
 @permission_classes([AllowAny])
 @ensure_csrf_cookie
@@ -232,6 +241,9 @@ def _serialize_general_setting(gs):
         'session_presets': gs.session_presets,
         'allow_extension': gs.allow_extension,
         'allow_reduction': gs.allow_reduction,
+        'leaderboard_default_filter': gs.leaderboard_default_filter,
+        'leaderboard_auto_rotate': gs.leaderboard_auto_rotate,
+        'leaderboard_rotation_minutes': gs.leaderboard_rotation_minutes,
     }
 
 
@@ -257,9 +269,36 @@ def general_settings_view(request):
         gs.allow_extension = data['allow_extension']
     if 'allow_reduction' in data:
         gs.allow_reduction = data['allow_reduction']
+
+    default_filter = data.get('leaderboard_default_filter')
+    if default_filter in {'active', '7days', 'all'}:
+        gs.leaderboard_default_filter = default_filter
+
+    if 'leaderboard_auto_rotate' in data:
+        gs.leaderboard_auto_rotate = bool(data['leaderboard_auto_rotate'])
+
+    if 'leaderboard_rotation_minutes' in data:
+        try:
+            minutes = int(data['leaderboard_rotation_minutes'])
+            gs.leaderboard_rotation_minutes = max(1, minutes)
+        except (TypeError, ValueError):
+            pass
+
     gs.save()
     _log_action(request.user, 'settings_updated', 'GeneralSetting', 1, 'Updated general settings')
     return Response(_serialize_general_setting(gs))
+
+
+@api_view(['GET'])
+@permission_classes([AllowAny])
+def public_leaderboard_settings(request):
+    """Return public leaderboard display configuration."""
+    gs = GeneralSetting.load()
+    return Response({
+        'default_filter': gs.leaderboard_default_filter,
+        'auto_rotate': gs.leaderboard_auto_rotate,
+        'rotation_minutes': max(1, gs.leaderboard_rotation_minutes),
+    })
 
 
 # ── Storyline CRUD ──
@@ -476,6 +515,7 @@ def _serialize_controller(c, request=None):
         'id': c.id,
         'name': c.name,
         'ip_address': c.ip_address,
+        'station_minutes': c.station_minutes,
         'is_start': c.is_start,
         'is_end': c.is_end,
         'hint_audio': hint_audio_url,
@@ -509,14 +549,22 @@ def controller_list_create(request):
 
     is_start = data.get('is_start', False)
     is_end = data.get('is_end', False)
+    station_minutes = data.get('station_minutes', 10)
     if isinstance(is_start, str):
         is_start = is_start.lower() in ('true', '1', 'yes')
     if isinstance(is_end, str):
         is_end = is_end.lower() in ('true', '1', 'yes')
+    try:
+        station_minutes = int(station_minutes)
+        if station_minutes <= 0:
+            raise ValueError()
+    except (ValueError, TypeError):
+        return Response({'error': 'station_minutes must be a positive integer.'}, status=status.HTTP_400_BAD_REQUEST)
 
     controller = Controller.objects.create(
         name=name,
         ip_address=ip_address,
+        station_minutes=station_minutes,
         is_start=is_start,
         is_end=is_end,
         cpu_usage=data.get('cpu_usage', ''),
@@ -554,6 +602,14 @@ def controller_detail(request, pk):
         data = request.data
         controller.name = data.get('name', controller.name)
         controller.ip_address = data.get('ip_address', controller.ip_address)
+        if 'station_minutes' in data:
+            try:
+                station_minutes = int(data.get('station_minutes'))
+                if station_minutes <= 0:
+                    raise ValueError()
+                controller.station_minutes = station_minutes
+            except (ValueError, TypeError):
+                return Response({'error': 'station_minutes must be a positive integer.'}, status=status.HTTP_400_BAD_REQUEST)
         if 'is_start' in data:
             val = data['is_start']
             controller.is_start = val if isinstance(val, bool) else str(val).lower() in ('true', '1', 'yes')
@@ -742,9 +798,11 @@ def pending_approve(request, pk):
 
     # Save RFID tag and session time from the approval modal
     rfid_tag = request.data.get('rfid_tag', '').strip()
+    if not rfid_tag:
+        return Response({'error': 'RFID tag is required before approval.'}, status=status.HTTP_400_BAD_REQUEST)
+
     session_minutes = request.data.get('session_minutes')
-    if rfid_tag:
-        p.rfid_tag = rfid_tag
+    p.rfid_tag = rfid_tag
     if session_minutes is not None:
         try:
             p.session_minutes = int(session_minutes)
@@ -753,15 +811,14 @@ def pending_approve(request, pk):
 
     from django.utils import timezone
     # Check for duplicate RFID tag on active sessions
-    if rfid_tag:
-        existing = PendingSignup.objects.filter(
-            rfid_tag=rfid_tag, status='approved'
-        ).exclude(pk=pk).first()
-        if existing:
-            return Response(
-                {'error': f'This RFID is already assigned to team "{existing.party_name}" (active session).'},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
+    existing = PendingSignup.objects.filter(
+        rfid_tag=rfid_tag, status='approved'
+    ).exclude(pk=pk).first()
+    if existing:
+        return Response(
+            {'error': f'This RFID is already assigned to team "{existing.party_name}" (active session).'},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
 
     p.status = 'approved'
     p.approved_at = timezone.now()
@@ -919,6 +976,24 @@ def update_session(request, pk):
             pass
         except (ValueError, TypeError):
             pass
+
+    # Allow assigning/changing RFID on an approved session
+    if 'rfid_tag' in data:
+        new_rfid = str(data.get('rfid_tag', '')).strip()
+        if not new_rfid:
+            return Response({'error': 'RFID tag cannot be empty.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        existing = PendingSignup.objects.filter(
+            rfid_tag=new_rfid, status='approved'
+        ).exclude(pk=pk).first()
+        if existing:
+            return Response(
+                {'error': f'This RFID is already assigned to team "{existing.party_name}" (active session).'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        p.rfid_tag = new_rfid
+
     if 'points' in data:
         try:
             p.points = int(data['points'])
@@ -944,7 +1019,6 @@ def update_session(request, pk):
         _log_action(request.user, 'session_points_updated', 'PendingSignup', p.id,
                     f'Updated points for "{p.party_name}" to {p.points}',
                     {'new_points': p.points})
-
     return Response(_serialize_pending(p, request))
 
 
@@ -1002,10 +1076,9 @@ def add_checkpoint(request, pk):
         from django.utils import timezone
         
         # Per-station points allocation
-        total_controllers = Controller.objects.count() or 1
-        per_station_seconds = (session.session_minutes * 60) // total_controllers
-        # Manual checkpoint gets full station points by default
-        points_earned = per_station_seconds // 6
+        per_station_seconds = _get_station_seconds(session, controller)
+        # Manual checkpoint gets full station points by default.
+        points_earned = per_station_seconds
         
         # Store points in checkpoint
         checkpoint.points_earned = points_earned
@@ -1128,9 +1201,19 @@ def rfid_start_session(request):
         except Controller.DoesNotExist:
             pass
 
+    # Prevent a session from being started at another station while it is
+    # already active somewhere else. A station must be completed (stop) first.
+    if p.is_playing:
+        return Response({
+            'error': 'Session is already active at another station. Complete the current station before starting a new one.',
+            'error_code': 'session_already_active',
+            'session_id': p.id,
+            'party_name': p.party_name,
+        }, status=status.HTTP_400_BAD_REQUEST)
+
     # Calculate per-station time
     total_controllers = Controller.objects.count() or 1
-    per_station_seconds = (p.session_minutes * 60) // total_controllers
+    per_station_seconds = _get_station_seconds(p, controller)
 
     # Prevent replaying a station already completed in this session.
     # A checkpoint means this station was already cleared once.
@@ -1187,8 +1270,8 @@ def rfid_stop_session(request):
 
     Multi-station workflow:
     - Pauses the timer and records a checkpoint for this controller.
-    - Points for this station = remaining seconds of the per-station countdown / 6
-      (i.e. remaining time in 10ths of minutes).
+        - Points for this station = remaining seconds of the per-station countdown
+            (1 second remaining = 1 point).
         - The session ends only after all controller stations have been cleared,
             regardless of order and regardless of is_start/is_end flags.
         - Otherwise the session stays 'approved' with timer paused, waiting for
@@ -1218,16 +1301,6 @@ def rfid_stop_session(request):
     p.is_playing = False
     p.last_started_at = None
 
-    # Calculate per-station allocation
-    total_controllers = Controller.objects.count() or 1
-    per_station_seconds = (p.session_minutes * 60) // total_controllers
-
-    # Points for this station = remaining time of per-station countdown
-    # remaining seconds converted to "10ths of minutes" (i.e. remaining_sec / 6)
-    station_remaining = max(0, per_station_seconds - station_elapsed)
-    # Points = remaining time in 10ths of minutes (e.g. 5min30s = 330s → 330/6 = 55 points)
-    station_points = station_remaining // 6
-
     # Look up controller and record checkpoint
     controller = None
     checkpoint_created = False
@@ -1236,6 +1309,15 @@ def rfid_stop_session(request):
             controller = Controller.objects.get(ip_address=controller_ip)
         except Controller.DoesNotExist:
             pass
+
+    # Calculate per-station allocation
+    total_controllers = Controller.objects.count() or 1
+    per_station_seconds = _get_station_seconds(p, controller)
+
+    # Points for this station = remaining time of per-station countdown
+    station_remaining = max(0, per_station_seconds - station_elapsed)
+    # 1 second remaining equals 1 point.
+    station_points = station_remaining
 
     if controller:
         checkpoint, created = Checkpoint.objects.get_or_create(
@@ -1340,10 +1422,10 @@ def rfid_checkpoint(request):
     if created:
         # Per-station allocation
         total_controllers = Controller.objects.count() or 1
-        per_station_seconds = (p.session_minutes * 60) // total_controllers
+        per_station_seconds = _get_station_seconds(p, controller)
         
-        # Default: award full station points if created manually
-        points_earned = per_station_seconds // 6
+        # Default: award full station points if created manually.
+        points_earned = per_station_seconds
         
         checkpoint.points_earned = points_earned
         checkpoint.save(update_fields=['points_earned'])
@@ -1396,7 +1478,7 @@ def rfid_status(request):
         
         # Per-station allocation
         total_controllers = Controller.objects.count() or 1
-        per_station_seconds = (p.session_minutes * 60) // total_controllers
+        per_station_seconds = _get_station_seconds(p)
         
         if remaining_secs > 0:
             data['session_status'] = 'active'

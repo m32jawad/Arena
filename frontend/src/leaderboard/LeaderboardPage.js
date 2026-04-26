@@ -4,6 +4,7 @@ import { motion, AnimatePresence, useMotionValue, useTransform, animate } from "
 // Automatically detect host IP/hostname for the backend API
 const defaultApiBase = `http://${window.location.hostname}:8000/api/auth`;
 const API_BASE = process.env.REACT_APP_API_BASE || defaultApiBase;
+const FILTER_ORDER = ["active", "7days", "all"];
 
 /* ─── Pre-built avatars (must match signup page) ─── */
 const AVATARS = {
@@ -204,9 +205,24 @@ export default function LeaderboardPage() {
   const [controllers, setControllers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState('active'); // 'active' (default), '7days', 'all'
+  const [autoRotate, setAutoRotate] = useState(false);
+  const [rotationMinutes, setRotationMinutes] = useState(1);
   // Track which team IDs recently gained points for the glow flash
   const [scoredIds, setScoredIds] = useState(new Set());
   const prevScoresRef = useRef({});
+
+  useEffect(() => {
+    fetch(`${API_BASE}/public/leaderboard-settings/`)
+      .then((r) => r.json())
+      .then((data) => {
+        if (FILTER_ORDER.includes(data.default_filter)) {
+          setFilter(data.default_filter);
+        }
+        setAutoRotate(Boolean(data.auto_rotate));
+        setRotationMinutes(Math.max(1, Number(data.rotation_minutes) || 1));
+      })
+      .catch(() => {});
+  }, []);
 
   const fetchData = useCallback(() => {
     Promise.all([
@@ -240,6 +256,21 @@ export default function LeaderboardPage() {
     const interval = setInterval(fetchData, 5000);
     return () => clearInterval(interval);
   }, [fetchData]);
+
+  useEffect(() => {
+    if (!autoRotate) return undefined;
+
+    const intervalMs = Math.max(1, rotationMinutes) * 60 * 1000;
+    const interval = setInterval(() => {
+      setFilter((prev) => {
+        const idx = FILTER_ORDER.indexOf(prev);
+        if (idx === -1) return FILTER_ORDER[0];
+        return FILTER_ORDER[(idx + 1) % FILTER_ORDER.length];
+      });
+    }, intervalMs);
+
+    return () => clearInterval(interval);
+  }, [autoRotate, rotationMinutes]);
 
   // Get cleared controller IDs for a team
   const getClearedIds = (team) =>

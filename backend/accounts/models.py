@@ -5,6 +5,12 @@ from django.utils import timezone
 
 class GeneralSetting(models.Model):
     """Singleton model – only one row should ever exist."""
+    LEADERBOARD_FILTER_CHOICES = [
+        ('active', 'Active Sessions'),
+        ('7days', 'Past 7 Days'),
+        ('all', 'All Time'),
+    ]
+
     arena_name = models.CharField(max_length=255, blank=True, default='')
     time_zone = models.CharField(max_length=100, blank=True, default='')
     date_format = models.CharField(max_length=100, blank=True, default='')
@@ -12,6 +18,13 @@ class GeneralSetting(models.Model):
     session_presets = models.CharField(max_length=255, blank=True, default='')
     allow_extension = models.BooleanField(default=False)
     allow_reduction = models.BooleanField(default=False)
+    leaderboard_default_filter = models.CharField(
+        max_length=10,
+        choices=LEADERBOARD_FILTER_CHOICES,
+        default='active',
+    )
+    leaderboard_auto_rotate = models.BooleanField(default=False)
+    leaderboard_rotation_minutes = models.PositiveIntegerField(default=1)
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
@@ -190,24 +203,22 @@ class PendingSignup(models.Model):
         return f'{self.party_name} ({self.status})'
     
     def get_elapsed_seconds(self):
-        """Calculate total elapsed playtime in seconds.
-        
-        If currently playing, includes time since last_started_at.
-        Otherwise, returns accumulated total_elapsed_seconds.
+        """Calculate total session elapsed time in seconds.
+
+        Session time is a continuous countdown from approval time.
+        It does not pause between stations.
         """
         from django.utils import timezone
-        
-        elapsed = self.total_elapsed_seconds
-        
-        if self.is_playing and self.last_started_at:
-            # Add current session time
-            current_duration = (timezone.now() - self.last_started_at).total_seconds()
-            elapsed += current_duration
-        
-        return int(elapsed)
+
+        if not self.approved_at:
+            return int(self.total_elapsed_seconds)
+
+        end_time = self.ended_at or timezone.now()
+        elapsed = max(0, int((end_time - self.approved_at).total_seconds()))
+        return elapsed
     
     def get_remaining_seconds(self):
-        """Calculate remaining playtime in seconds based on session_minutes."""
+        """Calculate remaining session time in seconds based on session_minutes."""
         total_allowed = self.session_minutes * 60
         elapsed = self.get_elapsed_seconds()
         return max(0, total_allowed - elapsed)
@@ -223,6 +234,10 @@ class Controller(models.Model):
     station_port = models.PositiveIntegerField(
         default=8001,
         help_text='Station hardware WebSocket port',
+    )
+    station_minutes = models.PositiveIntegerField(
+        default=10,
+        help_text='Time limit in minutes for this specific station',
     )
     is_start = models.BooleanField(
         default=False,
@@ -267,7 +282,7 @@ class Checkpoint(models.Model):
     )
     points_earned = models.PositiveIntegerField(
         default=0,
-        help_text='Points earned = remaining seconds of the per-station countdown (in 10ths of minutes)'
+        help_text='Points earned = remaining seconds of the per-station countdown (1 second = 1 point)'
     )
 
     class Meta:

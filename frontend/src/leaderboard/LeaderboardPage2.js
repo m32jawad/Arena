@@ -3,6 +3,7 @@ import { motion, AnimatePresence, useMotionValue, useTransform, animate } from "
 
 const defaultApiBase = `http://${window.location.hostname}:8000/api/auth`;
 const API_BASE = process.env.REACT_APP_API_BASE || defaultApiBase;
+const FILTER_ORDER = ["active", "7days", "all"];
 
 /* ─── Pre-built avatars (must match signup page) ─── */
 const AVATARS = {
@@ -151,14 +152,30 @@ const VideoBg = () => (
 export default function LeaderboardPage2() {
   const [teams, setTeams] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [filter, setFilter] = useState('active');
+  const [autoRotate, setAutoRotate] = useState(false);
+  const [rotationMinutes, setRotationMinutes] = useState(1);
   const [scoredIds, setScoredIds] = useState(new Set());
   const prevScoresRef = useRef({});
 
+  useEffect(() => {
+    fetch(`${API_BASE}/public/leaderboard-settings/`)
+      .then((r) => r.json())
+      .then((data) => {
+        if (FILTER_ORDER.includes(data.default_filter)) {
+          setFilter(data.default_filter);
+        }
+        setAutoRotate(Boolean(data.auto_rotate));
+        setRotationMinutes(Math.max(1, Number(data.rotation_minutes) || 1));
+      })
+      .catch(() => {});
+  }, []);
+
   const fetchLeaderboard = useCallback(() => {
-    fetch(`${API_BASE}/public/leaderboard/`)
+    fetch(`${API_BASE}/public/leaderboard/?filter=${filter}`)
       .then((res) => res.json())
       .then((data) => {
-        if (Array.isArray(data) && data.length > 0) {
+        if (Array.isArray(data)) {
           const newlyScored = new Set();
           data.forEach((team) => {
             const prev = prevScoresRef.current[team.id];
@@ -176,7 +193,7 @@ export default function LeaderboardPage2() {
       })
       .catch(() => {})
       .finally(() => setLoading(false));
-  }, []);
+  }, [filter]);
 
   /* Poll every 5 seconds for live updates */
   useEffect(() => {
@@ -184,6 +201,21 @@ export default function LeaderboardPage2() {
     const interval = setInterval(fetchLeaderboard, 5000);
     return () => clearInterval(interval);
   }, [fetchLeaderboard]);
+
+  useEffect(() => {
+    if (!autoRotate) return undefined;
+
+    const intervalMs = Math.max(1, rotationMinutes) * 60 * 1000;
+    const interval = setInterval(() => {
+      setFilter((prev) => {
+        const idx = FILTER_ORDER.indexOf(prev);
+        if (idx === -1) return FILTER_ORDER[0];
+        return FILTER_ORDER[(idx + 1) % FILTER_ORDER.length];
+      });
+    }, intervalMs);
+
+    return () => clearInterval(interval);
+  }, [autoRotate, rotationMinutes]);
 
   const topThree = teams.slice(0, 3);
   const restTeams = teams.slice(3);

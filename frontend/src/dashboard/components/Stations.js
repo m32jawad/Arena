@@ -63,6 +63,7 @@ const METRIC_KEYS = Object.keys(METRIC_LABELS);
 const emptyForm = {
   name: '',
   ip_address: '',
+  station_minutes: 10,
   is_start: false,
   is_end: false,
   hint_audio: null,
@@ -123,6 +124,7 @@ const Stations = ({ readOnly = false }) => {
     setForm({
       name: ctl.name,
       ip_address: ctl.ip_address,
+      station_minutes: ctl.station_minutes || 10,
       is_start: ctl.is_start || false,
       is_end: ctl.is_end || false,
       hint_audio: null,
@@ -140,6 +142,7 @@ const Stations = ({ readOnly = false }) => {
       const fd = new FormData();
       fd.append('name', form.name);
       fd.append('ip_address', form.ip_address);
+      fd.append('station_minutes', String(form.station_minutes || 10));
       fd.append('is_start', form.is_start);
       fd.append('is_end', form.is_end);
       if (form.hint_audio) {
@@ -230,6 +233,7 @@ const Stations = ({ readOnly = false }) => {
                       )}
                     </div>
                     <div className="text-xs mt-0.5" style={labelSt}>IP: {ctl.ip_address}</div>
+                    <div className="text-xs mt-0.5" style={labelSt}>Station Time: {ctl.station_minutes || 0} min</div>
                   </div>
                   {!readOnly && (
                     <div className="flex items-center ml-auto">
@@ -320,7 +324,7 @@ const Stations = ({ readOnly = false }) => {
 
             <form onSubmit={handleSubmit} className="space-y-4">
               {/* Name & IP — required */}
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-3 gap-4">
                 <div>
                   <label className="text-xs font-medium block mb-1" style={labelSt}>Controller Name *</label>
                   <input
@@ -339,6 +343,19 @@ const Stations = ({ readOnly = false }) => {
                     value={form.ip_address}
                     onChange={(e) => setForm({ ...form, ip_address: e.target.value })}
                     placeholder="e.g. 192.168.1.100"
+                    className="w-full p-2 border rounded text-sm"
+                    style={inputSt}
+                  />
+                </div>
+                <div>
+                  <label className="text-xs font-medium block mb-1" style={labelSt}>Station Time (min) *</label>
+                  <input
+                    required
+                    type="number"
+                    min="1"
+                    value={form.station_minutes}
+                    onChange={(e) => setForm({ ...form, station_minutes: e.target.value })}
+                    placeholder="e.g. 6"
                     className="w-full p-2 border rounded text-sm"
                     style={inputSt}
                   />

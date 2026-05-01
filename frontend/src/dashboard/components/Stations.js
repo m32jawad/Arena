@@ -10,6 +10,7 @@ import {
   Trash2,
   Edit2,
   RefreshCw,
+  RotateCcw,
   X,
 } from 'lucide-react';
 import { useTheme } from '../../context/ThemeContext';
@@ -184,6 +185,23 @@ const Stations = ({ readOnly = false }) => {
     fetchControllers();
   };
 
+  const [restartingId, setRestartingId] = useState(null);
+  const [restartMsg, setRestartMsg] = useState({});
+
+  const handleRestartService = async (ctl) => {
+    if (!window.confirm(`Restart the arena-station service on "${ctl.name}" (${ctl.ip_address})?`)) return;
+    setRestartingId(ctl.id);
+    setRestartMsg((prev) => ({ ...prev, [ctl.id]: null }));
+    try {
+      const data = await apiFetch(`${API_BASE}/controllers/${ctl.id}/restart-service/`, { method: 'POST' });
+      setRestartMsg((prev) => ({ ...prev, [ctl.id]: { ok: true, text: data.message || 'Restart triggered.' } }));
+    } catch (err) {
+      setRestartMsg((prev) => ({ ...prev, [ctl.id]: { ok: false, text: err.message } }));
+    } finally {
+      setRestartingId(null);
+    }
+  };
+
   const getMetrics = (ctl) =>
     METRIC_KEYS.filter((k) => ctl[k]).map((k) => ({
       key: k,
@@ -236,7 +254,17 @@ const Stations = ({ readOnly = false }) => {
                     <div className="text-xs mt-0.5" style={labelSt}>Station Time: {ctl.station_minutes || 0} min</div>
                   </div>
                   {!readOnly && (
-                    <div className="flex items-center ml-auto">
+                    <div className="flex items-center ml-auto gap-1">
+                      <button
+                        aria-label="Restart Service"
+                        title="Restart arena-station service on this Pi"
+                        disabled={restartingId === ctl.id}
+                        onClick={() => handleRestartService(ctl)}
+                        className="p-2 rounded"
+                        style={{ color: restartingId === ctl.id ? '#888' : '#f59e0b' }}
+                      >
+                        <RotateCcw size={16} className={restartingId === ctl.id ? 'animate-spin' : ''} />
+                      </button>
                       <button aria-label="Delete" onClick={() => handleDelete(ctl.id)} className="p-2 text-red-600">
                         <Trash2 size={16} />
                       </button>
@@ -249,6 +277,12 @@ const Stations = ({ readOnly = false }) => {
                     </div>
                   )}
                 </div>
+
+                {restartMsg[ctl.id] && (
+                  <div className={`mt-2 mb-1 text-xs px-2 py-1 rounded ${restartMsg[ctl.id].ok ? 'text-green-500' : 'text-red-500'}`}>
+                    {restartMsg[ctl.id].text}
+                  </div>
+                )}
 
                 {metrics.length === 0 ? (
                   <div className="mt-4 text-sm" style={labelSt}>No metrics data available.</div>

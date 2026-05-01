@@ -647,6 +647,62 @@ def controller_detail(request, pk):
 
 
 @api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def controller_restart_service(request, pk):
+    """Proxy a restart request to the station watchdog running on the Pi.
+
+    Requires superuser. Calls http://<station_ip>:<watchdog_port>/restart
+    using the shared WATCHDOG_TOKEN from settings.
+    """
+    import urllib.request as _urllib_request
+    import urllib.error as _urllib_error
+    import json as _json
+    from django.conf import settings as _settings
+
+    if not request.user.is_superuser:
+        return Response({'error': 'Permission denied.'}, status=status.HTTP_403_FORBIDDEN)
+
+    token = getattr(_settings, 'WATCHDOG_TOKEN', '')
+    if not token:
+        return Response(
+            {'error': 'WATCHDOG_TOKEN is not configured on the server.'},
+            status=status.HTTP_503_SERVICE_UNAVAILABLE,
+        )
+
+    try:
+        controller = Controller.objects.get(pk=pk)
+    except Controller.DoesNotExist:
+        return Response({'error': 'Controller not found.'}, status=status.HTTP_404_NOT_FOUND)
+
+    watchdog_port = getattr(_settings, 'WATCHDOG_PORT', 8002)
+    ip = controller.station_host or controller.ip_address
+    url = f'http://{ip}:{watchdog_port}/restart'
+
+    req = _urllib_request.Request(
+        url,
+        data=b'',
+        method='POST',
+        headers={'Authorization': f'Bearer {token}', 'Content-Type': 'application/json'},
+    )
+    try:
+        with _urllib_request.urlopen(req, timeout=15) as resp:
+            body = _json.loads(resp.read().decode('utf-8'))
+        _log_action(
+            request.user, 'controller_restart', 'Controller', controller.id,
+            f'Triggered service restart on "{controller.name}" ({ip})',
+        )
+        return Response(body)
+    except _urllib_error.HTTPError as exc:
+        try:
+            err_body = _json.loads(exc.read().decode('utf-8'))
+        except Exception:
+            err_body = {'error': str(exc)}
+        return Response(err_body, status=exc.code)
+    except Exception as exc:
+        return Response({'error': str(exc)}, status=status.HTTP_502_BAD_GATEWAY)
+
+
+@api_view(['POST'])
 @permission_classes([AllowAny])
 def controller_health_update(request):
     """Update controller health metrics.

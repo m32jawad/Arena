@@ -17,6 +17,7 @@ urlpatterns = [
     path('app-theme/', views.app_theme_view, name='app-theme'),
     path('controllers/', views.controller_list_create, name='controller-list-create'),
     path('controllers/<int:pk>/', views.controller_detail, name='controller-detail'),
+    path('controllers/<int:pk>/restart-service/', views.controller_restart_service, name='controller-restart-service'),
     path('controller-test/', views.controller_test_page, name='controller-test'),
 
     # Pending Signup

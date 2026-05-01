@@ -163,6 +163,10 @@ CORS_ALLOWED_ORIGINS = config('CORS_ALLOWED_ORIGINS', default='http://localhost:
 CORS_ALLOW_ALL_ORIGINS = True  # Keep this as backup if needed
 CORS_ALLOW_CREDENTIALS = True
 
+# Watchdog — shared secret used to authenticate remote restart requests sent to station watchdogs
+WATCHDOG_TOKEN = config('WATCHDOG_TOKEN', default='')
+WATCHDOG_PORT = config('WATCHDOG_PORT', default=8002, cast=int)
+
 # REST Framework
 REST_FRAMEWORK = {
     'DEFAULT_AUTHENTICATION_CLASSES': [

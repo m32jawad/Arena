@@ -1,0 +1,18 @@
+[Unit]
+Description=Arena Station Watchdog
+Documentation=Lightweight watchdog that allows remote restart of arena-station via HTTP
+After=network.target
+
+[Service]
+Type=simple
+User=pi
+WorkingDirectory=/home/pi/arena/station
+Environment="PATH=/home/pi/arena/station/venv/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+ExecStart=/home/pi/arena/station/venv/bin/python watchdog.py
+Restart=always
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

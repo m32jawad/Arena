@@ -206,7 +206,7 @@ export default function LeaderboardPage() {
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState('active'); // 'active' (default), '7days', 'all'
   const [autoRotate, setAutoRotate] = useState(false);
-  const [rotationMinutes, setRotationMinutes] = useState(1);
+  const [rotationSeconds, setRotationSeconds] = useState(60);
   // Track which team IDs recently gained points for the glow flash
   const [scoredIds, setScoredIds] = useState(new Set());
   const prevScoresRef = useRef({});
@@ -219,7 +219,7 @@ export default function LeaderboardPage() {
           setFilter(data.default_filter);
         }
         setAutoRotate(Boolean(data.auto_rotate));
-        setRotationMinutes(Math.max(1, Number(data.rotation_minutes) || 1));
+        setRotationSeconds(Math.max(1, Number(data.rotation_seconds) || 60));
       })
       .catch(() => {});
   }, []);
@@ -260,7 +260,7 @@ export default function LeaderboardPage() {
   useEffect(() => {
     if (!autoRotate) return undefined;
 
-    const intervalMs = Math.max(1, rotationMinutes) * 60 * 1000;
+    const intervalMs = Math.max(1, rotationSeconds) * 1000;
     const interval = setInterval(() => {
       setFilter((prev) => {
         const idx = FILTER_ORDER.indexOf(prev);
@@ -270,7 +270,7 @@ export default function LeaderboardPage() {
     }, intervalMs);
 
     return () => clearInterval(interval);
-  }, [autoRotate, rotationMinutes]);
+  }, [autoRotate, rotationSeconds]);
 
   // Get cleared controller IDs for a team
   const getClearedIds = (team) =>

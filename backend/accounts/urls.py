@@ -64,4 +64,9 @@ urlpatterns = [
     # Email subscribers
     path('email-subscribers/', views.email_subscribers, name='email-subscribers'),
     path('email-subscribers/csv/', views.email_subscribers_csv, name='email-subscribers-csv'),
+    path('email-subscribers/<int:pk>/delete/', views.email_subscriber_delete, name='email-subscriber-delete'),
+
+    # Admin leaderboard management
+    path('leaderboard/', views.admin_leaderboard, name='admin-leaderboard'),
+    path('sessions/<int:pk>/toggle-leaderboard/', views.toggle_leaderboard_hidden, name='toggle-leaderboard-hidden'),
 ]

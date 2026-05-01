@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { Search, ChevronLeft, ChevronRight, Eye, Edit, Slash, ChevronDown } from 'lucide-react';
+import { Search, ChevronLeft, ChevronRight, Eye, Edit, EyeOff, ChevronDown } from 'lucide-react';
 import { useTheme } from '../../context/ThemeContext';
+import { useAuth } from '../../context/AuthContext';
 
 const defaultApiBase = `http://${window.location.hostname}:8000/api/auth`;
 const API_BASE = process.env.REACT_APP_API_BASE || defaultApiBase;
@@ -44,6 +45,7 @@ const AvatarCircle = ({ item, size = 40 }) => {
 
 const Leaderboard = () => {
   const { theme } = useTheme();
+  const { apiFetch } = useAuth();
   const headingFont = theme.heading_font || 'inherit';
   const textFont = theme.text_font || 'inherit';
   const primaryColor = theme.primary_color || '#CB30E0';
@@ -63,11 +65,8 @@ const Leaderboard = () => {
 
   const fetchLeaderboard = async () => {
     try {
-      const res = await fetch(`${API_BASE}/public/leaderboard/`, { credentials: 'include' });
-      if (res.ok) {
-        const data = await res.json();
-        setTeams(data);
-      }
+      const data = await apiFetch(`${API_BASE}/leaderboard/`);
+      setTeams(Array.isArray(data) ? data : []);
     } catch (err) {
       console.error('Error fetching leaderboard:', err);
     } finally {
@@ -104,10 +103,13 @@ const Leaderboard = () => {
     console.log('Edit', team.name);
   };
 
-  const handleBlock = (id) => {
-    if (window.confirm('Are you sure you want to block this team?')) {
-      // TODO: Implement block API call
-      setTeams((prev) => prev.filter((t) => t.id !== id));
+  const handleToggleHidden = async (id) => {
+    try {
+      const data = await apiFetch(`${API_BASE}/sessions/${id}/toggle-leaderboard/`, { method: 'POST' });
+      setTeams((prev) => prev.map((t) => t.id === id ? { ...t, leaderboard_hidden: data.leaderboard_hidden } : t));
+    } catch (err) {
+      console.error('Toggle leaderboard error:', err);
+      alert('Failed to update leaderboard visibility.');
     }
   };
 
@@ -130,7 +132,7 @@ const Leaderboard = () => {
     return `${mins} mins`;
   };
 
-  const topThree = teams.slice(0, 3);
+  const topThree = teams.filter((t) => !t.leaderboard_hidden).slice(0, 3);
 
   if (loading) {
     return (
@@ -232,7 +234,7 @@ const Leaderboard = () => {
             </div>
           ) : (
             paginatedTeams.map((item) => (
-              <div key={item.id} className="grid grid-cols-12 gap-4 px-6 py-4 border-b items-center" style={{ borderColor: theme.sidebar_active_bg + '66' }}>
+              <div key={item.id} className="grid grid-cols-12 gap-4 px-6 py-4 border-b items-center" style={{ borderColor: theme.sidebar_active_bg + '66', opacity: item.leaderboard_hidden ? 0.55 : 1 }}>
                 <div className="col-span-1 flex items-center">
                   <input type="checkbox" className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500" />
                 </div>
@@ -240,7 +242,12 @@ const Leaderboard = () => {
                 <div className="col-span-3 flex items-center gap-3">
                   <AvatarCircle item={item} size={40} />
                   <div>
-                    <div className="text-sm font-medium" style={{ color: theme.sidebar_active_text }}>{item.name}</div>
+                    <div className="text-sm font-medium flex items-center gap-2" style={{ color: theme.sidebar_active_text }}>
+                      {item.name}
+                      {item.leaderboard_hidden && (
+                        <span className="text-xs px-1.5 py-0.5 rounded" style={{ backgroundColor: '#fee2e2', color: '#991b1b' }}>Hidden</span>
+                      )}
+                    </div>
                     <div className="text-xs" style={{ color: theme.sidebar_text }}>
                       {item.checkpoints_cleared}/{item.total_controllers} checkpoints • {item.points} points
                     </div>
@@ -272,8 +279,16 @@ const Leaderboard = () => {
                   <button onClick={() => handleEdit(item)} title="Edit" className="p-2 text-gray-400 hover:text-blue-500 hover:bg-blue-50 rounded-full">
                     <Edit size={16} />
                   </button>
-                  <button onClick={() => handleBlock(item.id)} title="Block" className="p-2 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-full">
-                    <Slash size={16} />
+                  <button
+                    onClick={() => handleToggleHidden(item.id)}
+                    title={item.leaderboard_hidden ? 'Show on leaderboard' : 'Hide from leaderboard'}
+                    className={`p-2 rounded-full transition-colors ${
+                      item.leaderboard_hidden
+                        ? 'text-amber-500 hover:bg-amber-50'
+                        : 'text-gray-400 hover:text-red-500 hover:bg-red-50'
+                    }`}
+                  >
+                    <EyeOff size={16} />
                   </button>
                 </div>
               </div>

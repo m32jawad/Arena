@@ -40,7 +40,7 @@ const Settings = () => {
   const [allowReduction, setAllowReduction] = useState(false);
   const [leaderboardDefaultFilter, setLeaderboardDefaultFilter] = useState('active');
   const [leaderboardAutoRotate, setLeaderboardAutoRotate] = useState(false);
-  const [leaderboardRotationMinutes, setLeaderboardRotationMinutes] = useState('1');
+  const [leaderboardRotationSeconds, setLeaderboardRotationSeconds] = useState('60');
   const [generalLoading, setGeneralLoading] = useState(false);
   const [generalError, setGeneralError] = useState('');
   const [generalSuccess, setGeneralSuccess] = useState('');
@@ -284,7 +284,7 @@ const Settings = () => {
       setAllowReduction(data.allow_reduction || false);
       setLeaderboardDefaultFilter(data.leaderboard_default_filter || 'active');
       setLeaderboardAutoRotate(data.leaderboard_auto_rotate || false);
-      setLeaderboardRotationMinutes(String(data.leaderboard_rotation_minutes || 1));
+      setLeaderboardRotationSeconds(String(data.leaderboard_rotation_seconds || 60));
     } catch (err) {
       setGeneralError(err.message);
     } finally {
@@ -310,7 +310,7 @@ const Settings = () => {
         allow_reduction: allowReduction,
         leaderboard_default_filter: leaderboardDefaultFilter,
         leaderboard_auto_rotate: leaderboardAutoRotate,
-        leaderboard_rotation_minutes: Math.max(1, parseInt(leaderboardRotationMinutes, 10) || 1),
+        leaderboard_rotation_seconds: Math.max(1, parseInt(leaderboardRotationSeconds, 10) || 60),
       };
       await apiFetch(`${API_BASE}/general-settings/`, {
         method: 'PUT',
@@ -661,14 +661,14 @@ const Settings = () => {
             </div>
 
             <div className="col-span-2">
-              <label className="text-xs" style={labelSt}>Auto Rotation Interval (minutes)</label>
+              <label className="text-xs" style={labelSt}>Auto Rotation Interval (seconds)</label>
               <input
                 type="number"
                 min="1"
                 step="1"
-                value={leaderboardRotationMinutes}
-                onChange={(e) => setLeaderboardRotationMinutes(e.target.value)}
-                placeholder="1"
+                value={leaderboardRotationSeconds}
+                onChange={(e) => setLeaderboardRotationSeconds(e.target.value)}
+                placeholder="60"
                 className="w-full mt-2 p-2 border rounded"
                 style={inputSt}
               />

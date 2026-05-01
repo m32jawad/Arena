@@ -244,6 +244,7 @@ def _serialize_general_setting(gs):
         'leaderboard_default_filter': gs.leaderboard_default_filter,
         'leaderboard_auto_rotate': gs.leaderboard_auto_rotate,
         'leaderboard_rotation_minutes': gs.leaderboard_rotation_minutes,
+        'leaderboard_rotation_seconds': gs.leaderboard_rotation_seconds,
     }
 
 
@@ -284,6 +285,13 @@ def general_settings_view(request):
         except (TypeError, ValueError):
             pass
 
+    if 'leaderboard_rotation_seconds' in data:
+        try:
+            seconds = int(data['leaderboard_rotation_seconds'])
+            gs.leaderboard_rotation_seconds = max(1, seconds)
+        except (TypeError, ValueError):
+            pass
+
     gs.save()
     _log_action(request.user, 'settings_updated', 'GeneralSetting', 1, 'Updated general settings')
     return Response(_serialize_general_setting(gs))
@@ -298,6 +306,7 @@ def public_leaderboard_settings(request):
         'default_filter': gs.leaderboard_default_filter,
         'auto_rotate': gs.leaderboard_auto_rotate,
         'rotation_minutes': max(1, gs.leaderboard_rotation_minutes),
+        'rotation_seconds': max(1, gs.leaderboard_rotation_seconds),
     })
 
 
@@ -940,6 +949,96 @@ def end_session(request, pk):
     _log_action(request.user, 'session_ended', 'PendingSignup', p.id,
                 f'Manually ended session "{p.party_name}"')
     return Response({'message': 'Session ended.'})
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def toggle_leaderboard_hidden(request, pk):
+    """Toggle the leaderboard_hidden flag for a session."""
+    if not request.user.is_superuser:
+        return Response({'error': 'Permission denied.'}, status=status.HTTP_403_FORBIDDEN)
+    try:
+        p = PendingSignup.objects.get(pk=pk)
+    except PendingSignup.DoesNotExist:
+        return Response({'error': 'Not found.'}, status=status.HTTP_404_NOT_FOUND)
+    p.leaderboard_hidden = not p.leaderboard_hidden
+    p.save(update_fields=['leaderboard_hidden'])
+    action = 'leaderboard_hidden' if p.leaderboard_hidden else 'leaderboard_shown'
+    _log_action(request.user, action, 'PendingSignup', p.id,
+                f'{"Hidden" if p.leaderboard_hidden else "Shown"} "{p.party_name}" on leaderboard')
+    return Response({'ok': True, 'leaderboard_hidden': p.leaderboard_hidden})
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def admin_leaderboard(request):
+    """Admin leaderboard — returns all sessions including leaderboard_hidden ones."""
+    from django.utils import timezone
+    from datetime import timedelta
+    if not request.user.is_superuser:
+        return Response({'error': 'Permission denied.'}, status=status.HTTP_403_FORBIDDEN)
+
+    now = timezone.now()
+    total_controllers = Controller.objects.count()
+    time_filter = request.query_params.get('filter', 'all')
+
+    if time_filter == 'active':
+        sessions = PendingSignup.objects.filter(status='approved').order_by('-points', 'created_at')
+    elif time_filter == '7days':
+        seven_days_ago = now - timedelta(days=7)
+        sessions = PendingSignup.objects.filter(
+            status__in=['approved', 'ended'],
+            created_at__gte=seven_days_ago,
+        ).order_by('-points', 'created_at')
+    else:
+        sessions = PendingSignup.objects.filter(
+            status__in=['approved', 'ended']
+        ).order_by('-points', 'created_at')
+
+    result = []
+    for p in sessions:
+        photo_url = ''
+        if p.profile_photo:
+            photo_url = request.build_absolute_uri(p.profile_photo.url)
+        checkpoints = Checkpoint.objects.filter(session=p).select_related('controller')
+        checkpoints_cleared = checkpoints.count()
+        checkpoint_list = [
+            {
+                'controller_id': cp.controller.id,
+                'controller_name': cp.controller.name,
+                'cleared_at': cp.cleared_at.isoformat(),
+            }
+            for cp in checkpoints
+        ]
+        remaining_minutes = 0
+        session_status = p.status
+        if p.status == 'approved':
+            remaining_seconds = p.get_remaining_seconds()
+            if remaining_seconds > 0:
+                remaining_minutes = remaining_seconds // 60
+                session_status = 'live'
+            else:
+                session_status = 'ended'
+        result.append({
+            'id': p.id,
+            'name': p.party_name,
+            'email': p.email,
+            'team_size': p.team_size,
+            'points': p.points,
+            'profile_photo': photo_url,
+            'avatar_id': p.avatar_id,
+            'storyline_title': p.storyline.title if p.storyline else '',
+            'session_minutes': p.session_minutes,
+            'remaining_minutes': remaining_minutes,
+            'session_status': session_status,
+            'checkpoints_cleared': checkpoints_cleared,
+            'total_controllers': total_controllers,
+            'checkpoints': checkpoint_list,
+            'created_at': p.created_at.isoformat() if p.created_at else '',
+            'approved_at': p.approved_at.isoformat() if p.approved_at else '',
+            'leaderboard_hidden': p.leaderboard_hidden,
+        })
+    return Response(result)
 
 
 @api_view(['PUT'])
@@ -1659,18 +1758,21 @@ def public_leaderboard(request):
 
     if time_filter == 'active':
         sessions = PendingSignup.objects.filter(
-            status='approved'
+            status='approved',
+            leaderboard_hidden=False,
         ).order_by('-points', 'created_at')
     elif time_filter == '7days':
         seven_days_ago = now - timedelta(days=7)
         sessions = PendingSignup.objects.filter(
             status__in=['approved', 'ended'],
             created_at__gte=seven_days_ago,
+            leaderboard_hidden=False,
         ).order_by('-points', 'created_at')
     else:
         # 'all' — include both live and ended
         sessions = PendingSignup.objects.filter(
-            status__in=['approved', 'ended']
+            status__in=['approved', 'ended'],
+            leaderboard_hidden=False,
         ).order_by('-points', 'created_at')
 
     result = []
@@ -1890,6 +1992,23 @@ def email_subscribers(request):
         }
         for s in signups
     ])
+
+
+@api_view(['DELETE'])
+@permission_classes([IsAuthenticated])
+def email_subscriber_delete(request, pk):
+    """Remove a signup from the mailing list by clearing receive_offers."""
+    if not request.user.is_superuser:
+        return Response({'error': 'Permission denied.'}, status=status.HTTP_403_FORBIDDEN)
+    try:
+        signup = PendingSignup.objects.get(pk=pk)
+    except PendingSignup.DoesNotExist:
+        return Response({'error': 'Not found.'}, status=status.HTTP_404_NOT_FOUND)
+    signup.receive_offers = False
+    signup.save(update_fields=['receive_offers'])
+    _log_action(request.user, 'email_unsubscribed', 'PendingSignup', signup.id,
+                f'Removed {signup.party_name} from mailing list')
+    return Response({'ok': True})
 
 
 @api_view(['GET'])

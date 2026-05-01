@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Search, Download, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Search, Download, ChevronLeft, ChevronRight, Trash2 } from 'lucide-react';
 import { useTheme } from '../../context/ThemeContext';
 import { useAuth } from '../../context/AuthContext';
 
@@ -34,8 +34,18 @@ const EmailSubscribers = () => {
     }
   };
 
-  const handleExportCSV = () => {
-    const url = `${API_BASE}/email-subscribers/csv/`;
+  const handleDelete = async (id) => {
+    if (!window.confirm('Remove this subscriber from the mailing list?')) return;
+    try {
+      await apiFetch(`${API_BASE}/email-subscribers/${id}/delete/`, { method: 'DELETE' });
+      setSubscribers((prev) => prev.filter((s) => s.id !== id));
+    } catch (err) {
+      console.error('Delete error:', err);
+      alert('Failed to remove subscriber.');
+    }
+  };
+
+  const handleExportCSV = () => {    const url = `${API_BASE}/email-subscribers/csv/`;
     const a = document.createElement('a');
     a.href = url;
     a.setAttribute('download', 'email_subscribers.csv');
@@ -132,7 +142,8 @@ const EmailSubscribers = () => {
           <div className="col-span-3">Email</div>
           <div className="col-span-2">Team Size</div>
           <div className="col-span-2">Status</div>
-          <div className="col-span-2">Signed Up</div>
+          <div className="col-span-1">Signed Up</div>
+          <div className="col-span-1"></div>
         </div>
 
         <div>
@@ -159,8 +170,17 @@ const EmailSubscribers = () => {
                       {s.status}
                     </span>
                   </div>
-                  <div className="col-span-2 text-sm" style={{ color: theme.sidebar_text }}>
+                  <div className="col-span-1 text-sm" style={{ color: theme.sidebar_text }}>
                     {formatDate(s.created_at)}
+                  </div>
+                  <div className="col-span-1 flex justify-end">
+                    <button
+                      onClick={() => handleDelete(s.id)}
+                      title="Remove from mailing list"
+                      className="p-1.5 rounded hover:bg-red-50 text-gray-400 hover:text-red-500 transition-colors"
+                    >
+                      <Trash2 size={15} />
+                    </button>
                   </div>
                 </div>
               );

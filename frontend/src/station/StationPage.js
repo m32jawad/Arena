@@ -22,6 +22,10 @@ if (typeof document !== 'undefined' && !document.getElementById('station-pulse-c
       0%, 100% { box-shadow: 0 0 0 0 rgba(251,191,36,0.28); }
       50% { box-shadow: 0 0 0 14px rgba(251,191,36,0); }
     }
+    @keyframes stationFadeIn {
+      0% { opacity: 0; transform: translate(-50%, -48%) scale(0.97); }
+      100% { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+    }
   `;
   document.head.appendChild(style);
 }
@@ -123,7 +127,10 @@ export default function StationPage() {
   const location = useLocation();
   const stationId = searchParams.get('station') || searchParams.get('id');
 
+  const devMode = searchParams.get('dev') === '1';
+
   const [appState,          setAppState]          = useState(STATES.OFFLINE);
+  const [fadingOut,         setFadingOut]         = useState(false);
   const [controllers,       setControllers]       = useState([]);
   const [selectedCtrl,      setSelectedCtrl]      = useState(null);
   const [recentScans,       setRecentScans]       = useState([]);
@@ -405,11 +412,11 @@ export default function StationPage() {
                 }
                 break;
 
-              case 'session_started':
+              case 'session_started': {
                 // Hardware detected RFID scan and started session
                 console.log('🎮 Session started event received');
                 const startSess = data.session;
-                setSession({
+                const hwSessionData = {
                   id: startSess.session_id,
                   party_name: startSess.party_name,
                   rfid_tag: startSess.rfid_tag,
@@ -418,20 +425,24 @@ export default function StationPage() {
                   total_controllers: startSess.total_controllers,
                   current_controller_index: startSess.current_controller_index,
                   is_end_controller: startSess.is_end_controller,
-                });
-                setCountdown(startSess.station_remaining_seconds || startSess.per_station_seconds || startSess.session_minutes * 60);
-                setStorylineHint(startSess.storyline_hint || '');
-                setHintAudioUrl(startSess.hint_audio || '');
-                setAppState(STATES.ACTIVE);
+                };
+                const hwCountdown = startSess.station_remaining_seconds || startSess.per_station_seconds || startSess.session_minutes * 60;
                 setRfidInput('');
                 setRfidError('');
+                transitionTo(STATES.ACTIVE, () => {
+                  setSession(hwSessionData);
+                  setCountdown(hwCountdown);
+                  setStorylineHint(startSess.storyline_hint || '');
+                  setHintAudioUrl(startSess.hint_audio || '');
+                });
                 break;
+              }
 
-              case 'session_ended':
+              case 'session_ended': {
                 // Session completed at this station (stop button pressed)
                 console.log('🏁 Session ended event received');
                 const endResult = data.result;
-                setResult({
+                const hwResultData = {
                   party_name: endResult.party_name,
                   points: endResult.total_points,
                   station_points: endResult.station_points,
@@ -442,30 +453,35 @@ export default function StationPage() {
                   current_controller_index: endResult.current_controller_index,
                   total_controllers: endResult.total_controllers,
                   controller_name: endResult.controller_name,
-                });
-                setAppState(STATES.RESULT);
-                setSession(null);
-                setHintAudioUrl('');
+                };
+                clearInterval(countdownRef.current);
                 if (hintAudioRef.current) { hintAudioRef.current.pause(); hintAudioRef.current = null; }
                 setHintPlaying(false);
-                clearInterval(countdownRef.current);
+                transitionTo(STATES.RESULT, () => {
+                  setResult(hwResultData);
+                  setSession(null);
+                  setHintAudioUrl('');
+                });
                 break;
+              }
 
-              case 'station_reset':
+              case 'station_reset': {
                 // Staff scanned card on RESULT screen — go back to READY
                 console.log('🔄 Station reset received');
-                setResult(null);
-                setSession(null);
-                setRfidInput('');
-                setRfidError('');
-                setStaffRfid('');
-                setStaffError('');
-                setStorylineHint('');
-                setHintAudioUrl('');
                 if (hintAudioRef.current) { hintAudioRef.current.pause(); hintAudioRef.current = null; }
                 setHintPlaying(false);
-                setAppState(STATES.READY);
+                transitionTo(STATES.READY, () => {
+                  setResult(null);
+                  setSession(null);
+                  setRfidInput('');
+                  setRfidError('');
+                  setStaffRfid('');
+                  setStaffError('');
+                  setStorylineHint('');
+                  setHintAudioUrl('');
+                });
                 break;
+              }
 
               case 'button_press':
                 // Hardware button pressed
@@ -554,6 +570,16 @@ export default function StationPage() {
     };
   }, [selectedCtrl]); // Only reconnect when station changes, NOT on appState change
 
+  // ── fade transition helper ────────────────────
+  function transitionTo(newState, action) {
+    setFadingOut(true);
+    setTimeout(() => {
+      if (action) action();
+      setAppState(newState);
+      setFadingOut(false);
+    }, 380);
+  }
+
   // ── helpers ──────────────────────────────────
   const playHintAudio = useCallback((audioUrl) => {
     if (!audioUrl) return;
@@ -596,7 +622,7 @@ export default function StationPage() {
         body: JSON.stringify(body),
       });
       const data = await res.json();
-      setResult(res.ok ? {
+      const resultData = res.ok ? {
         party_name:            data.party_name || sess.party_name,
         points:                data.total_points,
         station_points:        data.station_points,
@@ -611,12 +637,12 @@ export default function StationPage() {
         party_name: sess.party_name,
         points: null,
         error: data.error || 'Could not end session.',
-      });
-    } catch {
-      setResult({ party_name: sess.party_name, points: null, error: 'Connection error.' });
-    } finally {
+      };
       setStopping(false);
-      setAppState(STATES.RESULT);
+      transitionTo(STATES.RESULT, () => setResult(resultData));
+    } catch {
+      setStopping(false);
+      transitionTo(STATES.RESULT, () => setResult({ party_name: sess.party_name, points: null, error: 'Connection error.' }));
     }
   }
 
@@ -648,7 +674,7 @@ export default function StationPage() {
       const startData = await startRes.json();
       if (!startRes.ok) { setRfidError(mapStationStartError(startData)); return; }
 
-      setSession({
+      const sessionData = {
         id: startData.session_id,
         party_name: startData.party_name,
         rfid_tag: rfid,
@@ -657,12 +683,15 @@ export default function StationPage() {
         total_controllers: startData.total_controllers,
         current_controller_index: startData.current_controller_index,
         is_end_controller: startData.is_end_controller,
-      });
-      setCountdown(startData.station_remaining_seconds || startData.per_station_seconds || startData.remaining_seconds);
-      setStorylineHint(startData.storyline_hint || '');
-      setHintAudioUrl(startData.hint_audio || '');
+      };
+      const countdownVal = startData.station_remaining_seconds || startData.per_station_seconds || startData.remaining_seconds;
       setRfidInput('');
-      setAppState(STATES.ACTIVE);
+      transitionTo(STATES.ACTIVE, () => {
+        setSession(sessionData);
+        setCountdown(countdownVal);
+        setStorylineHint(startData.storyline_hint || '');
+        setHintAudioUrl(startData.hint_audio || '');
+      });
     } catch { setRfidError('Connection error. Please try again.'); }
     finally   { setRfidBusy(false); }
   }
@@ -686,13 +715,14 @@ export default function StationPage() {
       });
       const data = await res.json();
       if (res.ok && data.is_staff) {
-        setStaffRfid(''); setStaffError('');
-        setResult(null); setSession(null);
-        setRfidInput(''); setRfidError('');
-        setStorylineHint(''); setHintAudioUrl('');
         if (hintAudioRef.current) { hintAudioRef.current.pause(); hintAudioRef.current = null; }
         setHintPlaying(false);
-        setAppState(STATES.READY);
+        transitionTo(STATES.READY, () => {
+          setStaffRfid(''); setStaffError('');
+          setResult(null); setSession(null);
+          setRfidInput(''); setRfidError('');
+          setStorylineHint(''); setHintAudioUrl('');
+        });
       } else {
         setStaffError(data.error || 'Not a valid staff RFID.');
       }
@@ -743,7 +773,7 @@ export default function StationPage() {
 
       {/* ─── READY ─── */}
       {appState === STATES.READY && (
-        <div style={styles.centerPanel}>
+        <div style={{ ...styles.centerPanel, opacity: fadingOut ? 0 : 1, transition: 'opacity 0.35s linear', animation: fadingOut ? 'none' : 'stationFadeIn 0.45s ease' }}>
           <h1 style={styles.stateTitle}>READY</h1>
           
           {/* Station health status indicator */}
@@ -789,8 +819,8 @@ export default function StationPage() {
             </div>
           )}
 
-          {/* Manual input — only when no hardware */}
-          {!wsConnected && (
+          {/* Manual input — when no hardware OR in dev mode */}
+          {(!wsConnected || devMode) && (
             <div style={styles.inputRow}>
               <input
                 ref={rfidRef}
@@ -838,7 +868,7 @@ export default function StationPage() {
 
       {/* ─── ACTIVE ─── */}
       {appState === STATES.ACTIVE && session && (
-        <div style={styles.centerPanel}>
+        <div style={{ ...styles.centerPanel, opacity: fadingOut ? 0 : 1, transition: 'opacity 0.35s linear', animation: fadingOut ? 'none' : 'stationFadeIn 0.45s ease' }}>
           <div style={styles.activeDot} />
           <p  style={styles.activeLabel}>SESSION ACTIVE</p>
           <h1 style={styles.teamName}>{session.party_name}</h1>
@@ -857,7 +887,7 @@ export default function StationPage() {
           <button
             onClick={handleStopSession}
             disabled={stopping}
-            style={{ ...styles.stopBtn, opacity: stopping ? 0.5 : 1, display: 'none'}}
+            style={{ ...styles.stopBtn, opacity: stopping ? 0.5 : 1, display: devMode ? undefined : 'none'}}
           >
             {stopping ? 'Stopping…' : 'STOP'}
           </button>
@@ -884,7 +914,7 @@ export default function StationPage() {
 
       {/* ─── RESULT ─── */}
       {appState === STATES.RESULT && result && (
-        <div style={styles.centerPanel}>
+        <div style={{ ...styles.centerPanel, opacity: fadingOut ? 0 : 1, transition: 'opacity 0.35s linear', animation: fadingOut ? 'none' : 'stationFadeIn 0.45s ease' }}>
           <h1 style={styles.resultHeading}>
             {result.session_ended ? 'SESSION COMPLETE' : 'STATION COMPLETE'}
           </h1>

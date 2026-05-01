@@ -25,6 +25,7 @@ class GeneralSetting(models.Model):
     )
     leaderboard_auto_rotate = models.BooleanField(default=False)
     leaderboard_rotation_minutes = models.PositiveIntegerField(default=1)
+    leaderboard_rotation_seconds = models.PositiveIntegerField(default=60)
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
@@ -194,6 +195,10 @@ class PendingSignup(models.Model):
     current_controller_index = models.PositiveIntegerField(
         default=0,
         help_text='Index of the current controller station the player is at (0-based)',
+    )
+    leaderboard_hidden = models.BooleanField(
+        default=False,
+        help_text='If True, this entry is hidden from the public leaderboard',
     )
 
     class Meta:

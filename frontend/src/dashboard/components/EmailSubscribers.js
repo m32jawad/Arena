@@ -17,6 +17,7 @@ const EmailSubscribers = () => {
   const [loading, setLoading] = useState(true);
   const [query, setQuery] = useState('');
   const [currentPage, setCurrentPage] = useState(1);
+  const [selectedIds, setSelectedIds] = useState(new Set());
   const itemsPerPage = 15;
 
   useEffect(() => {
@@ -42,6 +43,44 @@ const EmailSubscribers = () => {
     } catch (err) {
       console.error('Delete error:', err);
       alert('Failed to remove subscriber.');
+    }
+  };
+
+  const handleBulkDelete = async () => {
+    if (selectedIds.size === 0) return;
+    if (!window.confirm(`Remove ${selectedIds.size} subscriber${selectedIds.size > 1 ? 's' : ''} from the mailing list?`)) return;
+    try {
+      const ids = Array.from(selectedIds);
+      await apiFetch(`${API_BASE}/email-subscribers/bulk-delete/`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ids }),
+      });
+      setSubscribers((prev) => prev.filter((s) => !selectedIds.has(s.id)));
+      setSelectedIds(new Set());
+    } catch (err) {
+      console.error('Bulk delete error:', err);
+      alert('Failed to remove selected subscribers.');
+    }
+  };
+
+  const toggleSelect = (id) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) {
+        next.delete(id);
+      } else {
+        next.add(id);
+      }
+      return next;
+    });
+  };
+
+  const toggleSelectAll = () => {
+    if (selectedIds.size === paginated.length) {
+      setSelectedIds(new Set());
+    } else {
+      setSelectedIds(new Set(paginated.map((s) => s.id)));
     }
   };
 
@@ -121,9 +160,21 @@ const EmailSubscribers = () => {
 
       <div className="rounded-lg border overflow-hidden" style={{ backgroundColor: theme.sidebar_bg, borderColor: theme.sidebar_active_bg }}>
         <div className="flex items-center justify-between px-6 py-4">
-          <h2 className="text-md font-semibold" style={{ color: theme.sidebar_active_text, fontFamily: headingFont }}>
-            {filtered.length} subscriber{filtered.length !== 1 ? 's' : ''}
-          </h2>
+          <div className="flex items-center gap-4">
+            <h2 className="text-md font-semibold" style={{ color: theme.sidebar_active_text, fontFamily: headingFont }}>
+              {filtered.length} subscriber{filtered.length !== 1 ? 's' : ''}
+            </h2>
+            {selectedIds.size > 0 && (
+              <button
+                onClick={handleBulkDelete}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium text-white"
+                style={{ backgroundColor: '#dc2626' }}
+              >
+                <Trash2 size={15} />
+                Delete Selected ({selectedIds.size})
+              </button>
+            )}
+          </div>
           <div className="relative">
             <Search className="absolute left-3 top-1/2 transform -translate-y-1/2" size={18} style={{ color: theme.sidebar_text }} />
             <input
@@ -138,8 +189,17 @@ const EmailSubscribers = () => {
         </div>
 
         <div className="grid grid-cols-12 gap-4 px-6 py-3.5 border-b text-xs font-medium" style={{ backgroundColor: theme.sidebar_active_bg, borderColor: theme.sidebar_active_bg, color: theme.sidebar_text }}>
+          <div className="col-span-1 flex items-center">
+            <input
+              type="checkbox"
+              checked={paginated.length > 0 && selectedIds.size === paginated.length}
+              onChange={toggleSelectAll}
+              className="w-4 h-4 rounded focus:ring-2"
+              style={{ accentColor: primaryColor }}
+            />
+          </div>
           <div className="col-span-3">Party Name</div>
-          <div className="col-span-3">Email</div>
+          <div className="col-span-2">Email</div>
           <div className="col-span-2">Team Size</div>
           <div className="col-span-2">Status</div>
           <div className="col-span-1">Signed Up</div>
@@ -155,11 +215,20 @@ const EmailSubscribers = () => {
             paginated.map((s) => {
               const colors = statusColors[s.status] || { bg: '#f3f4f6', text: '#374151' };
               return (
-                <div key={s.id} className="grid grid-cols-12 gap-4 px-6 py-3.5 border-b items-center" style={{ borderColor: theme.sidebar_active_bg + '66' }}>
+                <div key={s.id} className="grid grid-cols-12 gap-4 px-6 py-3.5 border-b items-center" style={{ borderColor: theme.sidebar_active_bg + '66', opacity: selectedIds.has(s.id) ? 0.7 : 1 }}>
+                  <div className="col-span-1 flex items-center">
+                    <input
+                      type="checkbox"
+                      checked={selectedIds.has(s.id)}
+                      onChange={() => toggleSelect(s.id)}
+                      className="w-4 h-4 rounded focus:ring-2"
+                      style={{ accentColor: primaryColor }}
+                    />
+                  </div>
                   <div className="col-span-3 text-sm font-medium" style={{ color: theme.sidebar_active_text }}>
                     {s.party_name}
                   </div>
-                  <div className="col-span-3 text-sm" style={{ color: theme.sidebar_text }}>
+                  <div className="col-span-2 text-sm" style={{ color: theme.sidebar_text }}>
                     {s.email}
                   </div>
                   <div className="col-span-2 text-sm" style={{ color: theme.sidebar_text }}>

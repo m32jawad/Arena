@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Search, ChevronLeft, ChevronRight, Eye, Edit, EyeOff, ChevronDown } from 'lucide-react';
+import { Search, ChevronLeft, ChevronRight, Eye, Edit, EyeOff, ChevronDown, Trash2 } from 'lucide-react';
 import { useTheme } from '../../context/ThemeContext';
 import { useAuth } from '../../context/AuthContext';
 
@@ -55,6 +55,7 @@ const Leaderboard = () => {
   const [query, setQuery] = useState('');
   const [timeFilter, setTimeFilter] = useState('last7days');
   const [currentPage, setCurrentPage] = useState(1);
+  const [selectedIds, setSelectedIds] = useState(new Set());
   const itemsPerPage = 10;
 
   useEffect(() => {
@@ -110,6 +111,53 @@ const Leaderboard = () => {
     } catch (err) {
       console.error('Toggle leaderboard error:', err);
       alert('Failed to update leaderboard visibility.');
+    }
+  };
+
+  const handleDelete = async (id) => {
+    if (!window.confirm('Delete this team from the leaderboard permanently?')) return;
+    try {
+      await apiFetch(`${API_BASE}/sessions/${id}/delete/`, { method: 'DELETE' });
+      setTeams((prev) => prev.filter((t) => t.id !== id));
+      setSelectedIds((prev) => { const next = new Set(prev); next.delete(id); return next; });
+    } catch (err) {
+      console.error('Delete error:', err);
+      alert('Failed to delete team.');
+    }
+  };
+
+  const handleBulkDelete = async () => {
+    if (selectedIds.size === 0) return;
+    if (!window.confirm(`Delete ${selectedIds.size} team${selectedIds.size > 1 ? 's' : ''} from the leaderboard permanently?`)) return;
+    try {
+      const ids = Array.from(selectedIds);
+      await apiFetch(`${API_BASE}/sessions/bulk-delete/`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ids }),
+      });
+      setTeams((prev) => prev.filter((t) => !selectedIds.has(t.id)));
+      setSelectedIds(new Set());
+    } catch (err) {
+      console.error('Bulk delete error:', err);
+      alert('Failed to delete selected teams.');
+    }
+  };
+
+  const toggleSelect = (id) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const toggleSelectAll = () => {
+    if (selectedIds.size === paginatedTeams.length) {
+      setSelectedIds(new Set());
+    } else {
+      setSelectedIds(new Set(paginatedTeams.map((t) => t.id)));
     }
   };
 
@@ -182,7 +230,19 @@ const Leaderboard = () => {
 
       <div className="rounded-lg border overflow-hidden" style={{ backgroundColor: theme.sidebar_bg, borderColor: theme.sidebar_active_bg }}>
         <div className='flex items-center justify-between'>
-          <h1 className="text-md font-semibold mb-1 px-6 py-4" style={{ color: theme.sidebar_active_text, fontFamily: headingFont }}>Detail View</h1>
+          <div className="flex items-center gap-4 px-6 py-4">
+            <h1 className="text-md font-semibold" style={{ color: theme.sidebar_active_text, fontFamily: headingFont }}>Detail View</h1>
+            {selectedIds.size > 0 && (
+              <button
+                onClick={handleBulkDelete}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium text-white"
+                style={{ backgroundColor: '#dc2626' }}
+              >
+                <Trash2 size={15} />
+                Delete Selected ({selectedIds.size})
+              </button>
+            )}
+          </div>
           
           <div className="flex items-center gap-4 pr-6">
             <div className="relative max-w-md">
@@ -218,12 +278,20 @@ const Leaderboard = () => {
         </div>
         
         <div className="grid grid-cols-12 gap-4 px-6 py-3.5 border-b text-xs font-medium" style={{ backgroundColor: theme.sidebar_active_bg, borderColor: theme.sidebar_active_bg, color: theme.sidebar_text }}>
-          <div className="col-span-1"></div>
+          <div className="col-span-1 flex items-center">
+            <input
+              type="checkbox"
+              checked={paginatedTeams.length > 0 && selectedIds.size === paginatedTeams.length}
+              onChange={toggleSelectAll}
+              className="w-4 h-4 rounded focus:ring-2"
+              style={{ accentColor: primaryColor }}
+            />
+          </div>
           <div className="col-span-3">Team Name</div>
           <div className="col-span-2">Email</div>
           <div className="col-span-2">Start Time</div>
           <div className="col-span-2">Remaining Time</div>
-          <div className="col-span-1">RFID Number</div>
+          <div className="col-span-1">RFID</div>
           <div className="col-span-1 text-right">Actions</div>
         </div>
 
@@ -236,7 +304,13 @@ const Leaderboard = () => {
             paginatedTeams.map((item) => (
               <div key={item.id} className="grid grid-cols-12 gap-4 px-6 py-4 border-b items-center" style={{ borderColor: theme.sidebar_active_bg + '66', opacity: item.leaderboard_hidden ? 0.55 : 1 }}>
                 <div className="col-span-1 flex items-center">
-                  <input type="checkbox" className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500" />
+                  <input
+                    type="checkbox"
+                    checked={selectedIds.has(item.id)}
+                    onChange={() => toggleSelect(item.id)}
+                    className="w-4 h-4 rounded focus:ring-2"
+                    style={{ accentColor: primaryColor }}
+                  />
                 </div>
 
                 <div className="col-span-3 flex items-center gap-3">
@@ -272,7 +346,7 @@ const Leaderboard = () => {
                   <div className="text-sm" style={{ color: theme.sidebar_text }}>{item.id}</div>
                 </div>
 
-                <div className="col-span-1 flex items-center justify-end gap-2">
+                <div className="col-span-1 flex items-center justify-end gap-1">
                   <button onClick={() => handleView(item)} title="View" className="p-2 text-gray-400 hover:text-gray-900 hover:bg-gray-50 rounded-full">
                     <Eye size={16} />
                   </button>
@@ -289,6 +363,13 @@ const Leaderboard = () => {
                     }`}
                   >
                     <EyeOff size={16} />
+                  </button>
+                  <button
+                    onClick={() => handleDelete(item.id)}
+                    title="Delete team permanently"
+                    className="p-2 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-full transition-colors"
+                  >
+                    <Trash2 size={16} />
                   </button>
                 </div>
               </div>

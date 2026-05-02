@@ -1007,6 +1007,42 @@ def end_session(request, pk):
     return Response({'message': 'Session ended.'})
 
 
+@api_view(['DELETE'])
+@permission_classes([IsAuthenticated])
+def session_delete(request, pk):
+    """Delete a session and its checkpoints permanently."""
+    if not request.user.is_superuser:
+        return Response({'error': 'Permission denied.'}, status=status.HTTP_403_FORBIDDEN)
+    try:
+        p = PendingSignup.objects.get(pk=pk)
+    except PendingSignup.DoesNotExist:
+        return Response({'error': 'Not found.'}, status=status.HTTP_404_NOT_FOUND)
+    party_name = p.party_name
+    Checkpoint.objects.filter(session=p).delete()
+    p.delete()
+    _log_action(request.user, 'session_deleted', 'PendingSignup', pk,
+                f'Deleted session "{party_name}"')
+    return Response({'ok': True, 'message': f'Session "{party_name}" deleted.'})
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def sessions_bulk_delete(request):
+    """Delete multiple sessions and their checkpoints permanently."""
+    if not request.user.is_superuser:
+        return Response({'error': 'Permission denied.'}, status=status.HTTP_403_FORBIDDEN)
+    ids = request.data.get('ids', [])
+    if not ids:
+        return Response({'error': 'No IDs provided.'}, status=status.HTTP_400_BAD_REQUEST)
+    sessions = PendingSignup.objects.filter(pk__in=ids)
+    count = sessions.count()
+    Checkpoint.objects.filter(session__in=sessions).delete()
+    sessions.delete()
+    _log_action(request.user, 'sessions_bulk_deleted', 'PendingSignup', None,
+                f'Deleted {count} sessions')
+    return Response({'ok': True, 'count': count})
+
+
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 def toggle_leaderboard_hidden(request, pk):
@@ -2065,6 +2101,23 @@ def email_subscriber_delete(request, pk):
     _log_action(request.user, 'email_unsubscribed', 'PendingSignup', signup.id,
                 f'Removed {signup.party_name} from mailing list')
     return Response({'ok': True})
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def email_subscribers_bulk_delete(request):
+    """Remove multiple signups from the mailing list at once."""
+    if not request.user.is_superuser:
+        return Response({'error': 'Permission denied.'}, status=status.HTTP_403_FORBIDDEN)
+    ids = request.data.get('ids', [])
+    if not ids:
+        return Response({'error': 'No IDs provided.'}, status=status.HTTP_400_BAD_REQUEST)
+    signups = PendingSignup.objects.filter(pk__in=ids, receive_offers=True)
+    count = signups.count()
+    signups.update(receive_offers=False)
+    _log_action(request.user, 'email_unsubscribed_bulk', 'PendingSignup', None,
+                f'Removed {count} subscribers from mailing list')
+    return Response({'ok': True, 'count': count})
 
 
 @api_view(['GET'])

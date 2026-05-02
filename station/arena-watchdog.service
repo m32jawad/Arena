@@ -6,9 +6,8 @@ After=network.target
 [Service]
 Type=simple
 User=pi
-WorkingDirectory=/home/pi/arena/station
-Environment="PATH=/home/pi/arena/station/venv/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
-ExecStart=/home/pi/arena/station/venv/bin/python watchdog.py
+WorkingDirectory=/home/pi/Desktop/station
+ExecStart=python watchdog.py
 Restart=always
 RestartSec=5
 StandardOutput=journal

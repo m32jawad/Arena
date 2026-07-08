@@ -254,7 +254,17 @@ class Controller(models.Model):
     )
     hint_audio = models.FileField(
         upload_to='hints/', blank=True, null=True,
-        help_text='Audio file played as hint when hint button is pressed at this station',
+        help_text='Default audio hint for this station (used when no storyline-specific hint is set)',
+    )
+    requires_staff_reset = models.BooleanField(
+        default=True,
+        help_text='If True, a staff card must be scanned to reset this station between groups. '
+                  'If False, the station auto-resets after auto_reset_seconds.',
+    )
+    auto_reset_seconds = models.PositiveIntegerField(
+        default=20,
+        help_text='Cooldown in seconds before the station auto-resets for the next group '
+                  '(only used when requires_staff_reset is False).',
     )
     cpu_usage = models.CharField(max_length=50, blank=True, default='')
     storage_usage = models.CharField(max_length=100, blank=True, default='')
@@ -296,6 +306,34 @@ class Checkpoint(models.Model):
 
     def __str__(self):
         return f'{self.session.party_name} @ {self.controller.name}'
+
+
+class StationHint(models.Model):
+    """Per-storyline audio hint for a specific station (Controller).
+
+    Lets each station play a different audio hint depending on which storyline
+    the player is on. Falls back to Controller.hint_audio when no matching
+    StationHint exists for the player's storyline.
+    """
+    controller = models.ForeignKey(
+        Controller, on_delete=models.CASCADE, related_name='storyline_hints'
+    )
+    storyline = models.ForeignKey(
+        Storyline, on_delete=models.CASCADE, related_name='station_hints'
+    )
+    hint_audio = models.FileField(
+        upload_to='hints/',
+        help_text='Audio hint played at this station for this storyline',
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        unique_together = [('controller', 'storyline')]
+        ordering = ['controller_id', 'storyline_id']
+
+    def __str__(self):
+        return f'{self.controller.name} / {self.storyline.title}'
 
 
 class StaffProfile(models.Model):

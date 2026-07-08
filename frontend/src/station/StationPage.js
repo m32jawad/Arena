@@ -163,6 +163,7 @@ export default function StationPage() {
   const [staffRfid,   setStaffRfid]   = useState('');
   const [staffError,  setStaffError]  = useState('');
   const [staffBusy,   setStaffBusy]   = useState(false);
+  const [autoResetRemaining, setAutoResetRemaining] = useState(null); // seconds until auto-reset (null = staff reset)
 
   const videoRef      = useRef(null);
   const rfidRef       = useRef(null);
@@ -170,6 +171,7 @@ export default function StationPage() {
   const sessionRef    = useRef(null);  // stable ref for timer callback
   const countdownRef  = useRef(null);
   const hintAudioRef  = useRef(null);  // ref for hint audio element
+  const autoResetRef  = useRef(null);  // interval for auto-reset countdown
 
   // keep sessionRef in sync
   useEffect(() => { sessionRef.current = session; }, [session]);
@@ -185,8 +187,31 @@ export default function StationPage() {
   // ── auto-focus inputs ───────────────────────
   useEffect(() => {
     if (appState === STATES.READY)  setTimeout(() => rfidRef.current?.focus(),     100);
-    if (appState === STATES.RESULT) setTimeout(() => staffRfidRef.current?.focus(), 400);
-  }, [appState]);
+    // Only focus the staff input when a staff card is actually required to reset
+    if (appState === STATES.RESULT && result?.requires_staff_reset !== false) {
+      setTimeout(() => staffRfidRef.current?.focus(), 400);
+    }
+  }, [appState, result]);
+
+  // ── auto-reset countdown (stations that don't require a staff card) ──
+  useEffect(() => {
+    clearInterval(autoResetRef.current);
+    if (appState === STATES.RESULT && result && result.requires_staff_reset === false) {
+      const secs = Number(result.auto_reset_seconds);
+      const start = Number.isFinite(secs) && secs >= 0 ? secs : 0;
+      setAutoResetRemaining(start);
+      autoResetRef.current = setInterval(() => {
+        setAutoResetRemaining((prev) => {
+          if (prev == null) return prev;
+          if (prev <= 1) { clearInterval(autoResetRef.current); return 0; }
+          return prev - 1;
+        });
+      }, 1000);
+    } else {
+      setAutoResetRemaining(null);
+    }
+    return () => clearInterval(autoResetRef.current);
+  }, [appState, result]);
 
   // ── fetch controllers on mount ──────────────
   useEffect(() => {
@@ -405,6 +430,8 @@ export default function StationPage() {
                     current_controller_index: data.last_result.current_controller_index,
                     total_controllers: data.last_result.total_controllers,
                     controller_name: data.last_result.controller_name,
+                    requires_staff_reset: data.last_result.requires_staff_reset,
+                    auto_reset_seconds: data.last_result.auto_reset_seconds,
                   });
                   setAppState(STATES.RESULT);
                 } else if (data.station_mode === 'ready') {
@@ -453,6 +480,8 @@ export default function StationPage() {
                   current_controller_index: endResult.current_controller_index,
                   total_controllers: endResult.total_controllers,
                   controller_name: endResult.controller_name,
+                  requires_staff_reset: endResult.requires_staff_reset,
+                  auto_reset_seconds: endResult.auto_reset_seconds,
                 };
                 clearInterval(countdownRef.current);
                 if (hintAudioRef.current) { hintAudioRef.current.pause(); hintAudioRef.current = null; }
@@ -570,13 +599,17 @@ export default function StationPage() {
     };
   }, [selectedCtrl]); // Only reconnect when station changes, NOT on appState change
 
-  // ── fade transition helper ────────────────────
+  // ── fade transition helper — dips through black for a smooth cut ──
   function transitionTo(newState, action) {
+    // Phase 1: fade the screen to black
     setFadingOut(true);
     setTimeout(() => {
+      // Phase 2: swap state (and background video) while fully black
       if (action) action();
       setAppState(newState);
-      setFadingOut(false);
+      // Phase 3: hold black briefly so the new background can start rendering,
+      // then fade back in from black
+      setTimeout(() => setFadingOut(false), 160);
     }, 380);
   }
 
@@ -766,6 +799,8 @@ export default function StationPage() {
       <video ref={videoRef} style={styles.video} autoPlay loop muted playsInline src={VIDEO_MAP[appState]} />
       {/* dim overlay */}
       <div style={styles.dimOverlay} />
+      {/* blackout overlay — dips the whole screen through black during state transitions */}
+      <div style={{ ...styles.blackout, opacity: fadingOut ? 1 : 0 }} />
 
       {/* station name badge */}
       {selectedCtrl && <div style={styles.stationBadge}>{selectedCtrl.name}</div>}
@@ -953,7 +988,20 @@ export default function StationPage() {
             <p style={{ color: '#f87171', marginTop: 12 }}>{result.error}</p>
           )}
 
-          {wsConnected ? (
+          {result.requires_staff_reset === false ? (
+            // Auto-reset mode — no staff card needed, resets after a cooldown
+            <div style={styles.staffBox}>
+              <p style={styles.staffHeading}>STATION RESETTING FOR NEXT GROUP</p>
+              <div style={styles.scanPulse}>
+                <div style={styles.scanIcon}></div>
+                <p style={styles.scanText}>
+                  {autoResetRemaining != null && autoResetRemaining > 0
+                    ? `Ready in ${autoResetRemaining}s…`
+                    : 'Resetting…'}
+                </p>
+              </div>
+            </div>
+          ) : wsConnected ? (
             // Hardware mode — staff scans card on the reader to reset
             <div style={styles.staffBox}>
               <p style={styles.staffHeading}>STAFF — SCAN YOUR RFID TAG TO RESET STATION</p>
@@ -1026,6 +1074,14 @@ const styles = {
     inset: 0,
     backgroundColor: 'rgba(0,0,0,0.45)',
     zIndex: 1,
+  },
+  blackout: {
+    position: 'absolute',
+    inset: 0,
+    backgroundColor: '#000',
+    zIndex: 30,
+    transition: 'opacity 0.34s ease',
+    pointerEvents: 'none',
   },
   stationBadge: {
     position: 'absolute',

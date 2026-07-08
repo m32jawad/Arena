@@ -7,7 +7,7 @@ from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework import status
 
-from .models import Storyline, GeneralSetting, DashboardTheme, AppTheme, Controller, PendingSignup, Checkpoint, StaffProfile, AuditLog
+from .models import Storyline, GeneralSetting, DashboardTheme, AppTheme, Controller, PendingSignup, Checkpoint, StationHint, StaffProfile, AuditLog
 
 
 def _log_action(user, action, target_type='', target_id=None, description='', metadata=None):
@@ -29,6 +29,26 @@ def _get_station_seconds(session, controller=None):
 
     total_controllers = Controller.objects.count() or 1
     return max(1, (session.session_minutes * 60) // total_controllers)
+
+
+def _resolve_hint_audio_url(controller, storyline, request=None):
+    """Resolve the hint audio URL for a station given the player's storyline.
+
+    Prefers a storyline-specific StationHint; falls back to the controller's
+    default hint_audio. Returns '' when neither exists.
+    """
+    if not controller:
+        return ''
+    audio_file = None
+    if storyline:
+        hint = StationHint.objects.filter(controller=controller, storyline=storyline).first()
+        if hint and hint.hint_audio:
+            audio_file = hint.hint_audio
+    if audio_file is None and controller.hint_audio:
+        audio_file = controller.hint_audio
+    if not audio_file:
+        return ''
+    return request.build_absolute_uri(audio_file.url) if request else audio_file.url
 
 
 @api_view(['GET'])
@@ -516,10 +536,26 @@ def app_theme_view(request):
 
 # ── Controller CRUD ──
 
+def _serialize_station_hint(h, request=None):
+    audio_url = ''
+    if h.hint_audio:
+        audio_url = request.build_absolute_uri(h.hint_audio.url) if request else h.hint_audio.url
+    return {
+        'id': h.id,
+        'storyline_id': h.storyline_id,
+        'storyline_title': h.storyline.title if h.storyline else '',
+        'hint_audio': audio_url,
+    }
+
+
 def _serialize_controller(c, request=None):
     hint_audio_url = ''
     if c.hint_audio:
         hint_audio_url = request.build_absolute_uri(c.hint_audio.url) if request else c.hint_audio.url
+    storyline_hints = [
+        _serialize_station_hint(h, request)
+        for h in c.storyline_hints.select_related('storyline').all()
+    ]
     return {
         'id': c.id,
         'name': c.name,
@@ -528,6 +564,9 @@ def _serialize_controller(c, request=None):
         'is_start': c.is_start,
         'is_end': c.is_end,
         'hint_audio': hint_audio_url,
+        'requires_staff_reset': c.requires_staff_reset,
+        'auto_reset_seconds': c.auto_reset_seconds,
+        'storyline_hints': storyline_hints,
         'cpu_usage': c.cpu_usage,
         'storage_usage': c.storage_usage,
         'cpu_temperature': c.cpu_temperature,
@@ -570,12 +609,23 @@ def controller_list_create(request):
     except (ValueError, TypeError):
         return Response({'error': 'station_minutes must be a positive integer.'}, status=status.HTTP_400_BAD_REQUEST)
 
+    requires_staff_reset = data.get('requires_staff_reset', True)
+    if isinstance(requires_staff_reset, str):
+        requires_staff_reset = requires_staff_reset.lower() in ('true', '1', 'yes')
+    auto_reset_seconds = data.get('auto_reset_seconds', 20)
+    try:
+        auto_reset_seconds = max(0, int(auto_reset_seconds))
+    except (ValueError, TypeError):
+        auto_reset_seconds = 20
+
     controller = Controller.objects.create(
         name=name,
         ip_address=ip_address,
         station_minutes=station_minutes,
         is_start=is_start,
         is_end=is_end,
+        requires_staff_reset=requires_staff_reset,
+        auto_reset_seconds=auto_reset_seconds,
         cpu_usage=data.get('cpu_usage', ''),
         storage_usage=data.get('storage_usage', ''),
         cpu_temperature=data.get('cpu_temperature', ''),
@@ -625,6 +675,14 @@ def controller_detail(request, pk):
         if 'is_end' in data:
             val = data['is_end']
             controller.is_end = val if isinstance(val, bool) else str(val).lower() in ('true', '1', 'yes')
+        if 'requires_staff_reset' in data:
+            val = data['requires_staff_reset']
+            controller.requires_staff_reset = val if isinstance(val, bool) else str(val).lower() in ('true', '1', 'yes')
+        if 'auto_reset_seconds' in data:
+            try:
+                controller.auto_reset_seconds = max(0, int(data.get('auto_reset_seconds')))
+            except (ValueError, TypeError):
+                return Response({'error': 'auto_reset_seconds must be a non-negative integer.'}, status=status.HTTP_400_BAD_REQUEST)
         controller.cpu_usage = data.get('cpu_usage', controller.cpu_usage)
         controller.storage_usage = data.get('storage_usage', controller.storage_usage)
         controller.cpu_temperature = data.get('cpu_temperature', controller.cpu_temperature)
@@ -644,6 +702,58 @@ def controller_detail(request, pk):
         _log_action(request.user, 'controller_deleted', 'Controller', controller.id, f'Deleted controller "{controller.name}"')
         controller.delete()
         return Response({'message': 'Controller deleted.'}, status=status.HTTP_204_NO_CONTENT)
+
+
+@api_view(['GET', 'POST'])
+@permission_classes([IsAuthenticated])
+@parser_classes([MultiPartParser, FormParser])
+def controller_storyline_hints(request, pk):
+    """Manage per-storyline audio hints for a station (Controller).
+
+    GET  -> list of storyline hints for this controller.
+    POST -> upsert or clear a single storyline hint.
+            Body (multipart): storyline_id, plus either a `hint_audio` file
+            (to set/replace) or `clear=true` (to remove the hint).
+    """
+    try:
+        controller = Controller.objects.get(pk=pk)
+    except Controller.DoesNotExist:
+        return Response({'error': 'Controller not found.'}, status=status.HTTP_404_NOT_FOUND)
+
+    if request.method == 'GET':
+        hints = controller.storyline_hints.select_related('storyline').all()
+        return Response([_serialize_station_hint(h, request) for h in hints])
+
+    # POST — only superusers may modify
+    if not request.user.is_superuser:
+        return Response({'error': 'Permission denied.'}, status=status.HTTP_403_FORBIDDEN)
+
+    storyline_id = request.data.get('storyline_id')
+    if not storyline_id:
+        return Response({'error': 'storyline_id is required.'}, status=status.HTTP_400_BAD_REQUEST)
+    try:
+        storyline = Storyline.objects.get(pk=storyline_id)
+    except Storyline.DoesNotExist:
+        return Response({'error': 'Storyline not found.'}, status=status.HTTP_404_NOT_FOUND)
+
+    clear = str(request.data.get('clear', '')).lower() in ('true', '1', 'yes')
+    hint_audio = request.FILES.get('hint_audio')
+
+    if clear:
+        StationHint.objects.filter(controller=controller, storyline=storyline).delete()
+        _log_action(request.user, 'controller_updated', 'Controller', controller.id,
+                    f'Removed "{storyline.title}" hint audio for station "{controller.name}"')
+        return Response({'message': 'Storyline hint removed.', 'storyline_id': storyline.id, 'hint_audio': ''})
+
+    if not hint_audio:
+        return Response({'error': 'hint_audio file is required (or set clear=true).'}, status=status.HTTP_400_BAD_REQUEST)
+
+    hint, _ = StationHint.objects.get_or_create(controller=controller, storyline=storyline)
+    hint.hint_audio = hint_audio
+    hint.save()
+    _log_action(request.user, 'controller_updated', 'Controller', controller.id,
+                f'Set "{storyline.title}" hint audio for station "{controller.name}"')
+    return Response(_serialize_station_hint(hint, request))
 
 
 @api_view(['POST'])
@@ -1061,6 +1171,31 @@ def toggle_leaderboard_hidden(request, pk):
     return Response({'ok': True, 'leaderboard_hidden': p.leaderboard_hidden})
 
 
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def sessions_bulk_set_hidden(request):
+    """Hide or show multiple sessions on the leaderboard in one request.
+
+    Body: { "ids": [<pk>, ...], "hidden": true|false }
+    """
+    if not request.user.is_superuser:
+        return Response({'error': 'Permission denied.'}, status=status.HTTP_403_FORBIDDEN)
+    ids = request.data.get('ids', [])
+    if not ids:
+        return Response({'error': 'No IDs provided.'}, status=status.HTTP_400_BAD_REQUEST)
+    hidden = request.data.get('hidden', True)
+    if isinstance(hidden, str):
+        hidden = hidden.lower() in ('true', '1', 'yes')
+    hidden = bool(hidden)
+    updated = PendingSignup.objects.filter(pk__in=ids).update(leaderboard_hidden=hidden)
+    _log_action(request.user,
+                'leaderboard_hidden' if hidden else 'leaderboard_shown',
+                'PendingSignup', None,
+                f'{"Hid" if hidden else "Showed"} {updated} team(s) on the leaderboard',
+                {'ids': list(ids), 'hidden': hidden})
+    return Response({'ok': True, 'updated': updated, 'hidden': hidden})
+
+
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
 def admin_leaderboard(request):
@@ -1418,6 +1553,26 @@ def rfid_start_session(request):
             'controller_ip': controller.ip_address,
         }, status=status.HTTP_400_BAD_REQUEST)
 
+    # End-room gating: the end/final room (is_end) can only be started once
+    # every other (non-end) room has been cleared for this session.
+    if controller and controller.is_end:
+        non_end_total = Controller.objects.filter(is_end=False).count()
+        non_end_cleared = Checkpoint.objects.filter(
+            session=p, controller__is_end=False
+        ).count()
+        if non_end_cleared < non_end_total:
+            remaining_rooms = non_end_total - non_end_cleared
+            return Response({
+                'error': f'Complete all other rooms before the final room. '
+                         f'{remaining_rooms} room(s) remaining.',
+                'error_code': 'end_room_locked',
+                'session_id': p.id,
+                'party_name': p.party_name,
+                'controller_name': controller.name,
+                'controller_ip': controller.ip_address,
+                'rooms_remaining': remaining_rooms,
+            }, status=status.HTTP_400_BAD_REQUEST)
+
     # If first time starting, set started_at
     if not p.started_at:
         p.started_at = now
@@ -1448,7 +1603,9 @@ def rfid_start_session(request):
         'is_end_controller': controller.is_end if controller else False,
         'is_start_controller': controller.is_start if controller else False,
         'controller_name': controller.name if controller else '',
-        'hint_audio': request.build_absolute_uri(controller.hint_audio.url) if (controller and controller.hint_audio) else '',
+        'hint_audio': _resolve_hint_audio_url(controller, p.storyline, request),
+        'requires_staff_reset': controller.requires_staff_reset if controller else True,
+        'auto_reset_seconds': controller.auto_reset_seconds if controller else 0,
     })
 
 
@@ -1525,15 +1682,23 @@ def rfid_stop_session(request):
     checkpoints_cleared = Checkpoint.objects.filter(session=p).count()
     p.current_controller_index = checkpoints_cleared
 
-    # End only when all stations/controllers are completed.
-    all_stations_completed = total_controllers > 0 and checkpoints_cleared >= total_controllers
-    session_ended = False
+    # Determine when the whole game is finished.
+    # If an end/final room is defined, the game ends only when that end room is
+    # cleared (which — thanks to end-room gating on start — can only happen once
+    # every other room has been completed). Otherwise fall back to "all rooms
+    # cleared, in any order".
+    has_end_room = Controller.objects.filter(is_end=True).exists()
+    if has_end_room:
+        session_ended = Checkpoint.objects.filter(
+            session=p, controller__is_end=True
+        ).exists()
+    else:
+        session_ended = total_controllers > 0 and checkpoints_cleared >= total_controllers
 
-    if all_stations_completed:
+    if session_ended:
         # End the entire session
         p.status = 'ended'
         p.ended_at = now
-        session_ended = True
 
     p.save(update_fields=[
         'total_elapsed_seconds', 'is_playing', 'last_started_at',
@@ -1558,6 +1723,8 @@ def rfid_stop_session(request):
         'controller_name': controller.name if controller else '',
         'is_end_controller': controller.is_end if controller else False,
         'checkpoint_created': checkpoint_created,
+        'requires_staff_reset': controller.requires_staff_reset if controller else True,
+        'auto_reset_seconds': controller.auto_reset_seconds if controller else 0,
     })
 
 

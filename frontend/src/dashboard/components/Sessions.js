@@ -54,6 +54,44 @@ function getCookie(name) {
   return '';
 }
 
+/* Themed confirmation dialog — used for destructive/irreversible actions */
+const ConfirmDialog = ({ open, title, message, confirmLabel = 'Confirm', cancelLabel = 'Cancel', danger = true, theme, onConfirm, onCancel }) => {
+  if (!open) return null;
+  const primaryColor = theme.primary_color || '#CB30E0';
+  return (
+    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50" onClick={onCancel}>
+      <div
+        className="rounded-2xl shadow-2xl w-full max-w-[420px] mx-4 overflow-hidden"
+        style={{ backgroundColor: theme.sidebar_bg }}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="px-6 pt-6 pb-2">
+          <h3 className="text-lg font-semibold m-0 mb-2" style={{ color: theme.sidebar_active_text }}>
+            {title}
+          </h3>
+          <p className="text-sm m-0" style={{ color: theme.sidebar_text }}>{message}</p>
+        </div>
+        <div className="px-6 pb-6 pt-4 flex gap-3">
+          <button
+            onClick={onConfirm}
+            className="flex-1 py-2.5 rounded-xl text-white text-sm font-semibold border-none cursor-pointer transition hover:opacity-90"
+            style={{ backgroundColor: danger ? '#ef4444' : primaryColor }}
+          >
+            {confirmLabel}
+          </button>
+          <button
+            onClick={onCancel}
+            className="flex-1 py-2.5 rounded-xl text-sm font-semibold border cursor-pointer transition hover:opacity-80"
+            style={{ backgroundColor: 'transparent', borderColor: theme.sidebar_active_bg, color: theme.sidebar_active_text }}
+          >
+            {cancelLabel}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
 const Sessions = () => {
   const { theme } = useTheme();
   const headingFont = theme.heading_font || 'inherit';
@@ -83,6 +121,10 @@ const Sessions = () => {
   const [editRfidOriginal, setEditRfidOriginal] = useState('');
   const [editError, setEditError] = useState('');
   const editTimerRef = useRef(null);
+
+  /* Confirmation dialog state: { title, message, confirmLabel, danger, onConfirm } */
+  const [confirmState, setConfirmState] = useState(null);
+  const closeConfirm = () => setConfirmState(null);
 
   /* Fetch controllers */
   const fetchControllers = useCallback(async () => {
@@ -135,7 +177,7 @@ const Sessions = () => {
     return () => clearInterval(interval);
   }, [fetchLive, fetchEnded, fetchControllers, fetchSettings]);
 
-  /* End game */
+  /* End game — performs the actual termination */
   const handleEndGame = async (id) => {
     try {
       const res = await fetch(`${API_BASE}/sessions/${id}/end/`, {
@@ -149,6 +191,20 @@ const Sessions = () => {
         setEditItem(null);
       }
     } catch { /* ignore */ }
+  };
+
+  /* Ask for confirmation before terminating a game */
+  const requestEndGame = (session) => {
+    setConfirmState({
+      title: 'Terminate Game',
+      message: `Are you sure you want to terminate this game${session.party_name ? ` for "${session.party_name}"` : ''}? This will end the session immediately and cannot be undone.`,
+      confirmLabel: 'Terminate Game',
+      danger: true,
+      onConfirm: () => {
+        closeConfirm();
+        handleEndGame(session.id);
+      },
+    });
   };
 
   /* Open edit modal */
@@ -220,18 +276,39 @@ const Sessions = () => {
     }
   };
 
-  /* Toggle checkpoint — add or remove */
-  const handleToggleCheckpoint = async (controllerId) => {
+  /* Toggle checkpoint — decides whether to confirm first (removing is destructive) */
+  const handleToggleCheckpoint = (controllerId) => {
     if (!editItem) return;
-    
     const isCleared = editItem.checkpoints?.some(cp => cp.controller_id === controllerId);
-    
+    if (isCleared) {
+      const controller = controllers.find(c => c.id === controllerId);
+      setConfirmState({
+        title: 'Reset Station',
+        message: `Resetting ${controller ? `"${controller.name}"` : 'this station'} will forget the group's time and score for this station. Are you sure you want to continue?`,
+        confirmLabel: 'Reset Station',
+        danger: true,
+        onConfirm: () => {
+          closeConfirm();
+          performToggleCheckpoint(controllerId);
+        },
+      });
+    } else {
+      performToggleCheckpoint(controllerId);
+    }
+  };
+
+  /* Toggle checkpoint — add or remove (actual work) */
+  const performToggleCheckpoint = async (controllerId) => {
+    if (!editItem) return;
+
+    const isCleared = editItem.checkpoints?.some(cp => cp.controller_id === controllerId);
+
     try {
       if (isCleared) {
         // Remove checkpoint
         const checkpoint = editItem.checkpoints.find(cp => cp.controller_id === controllerId);
         if (!checkpoint) return;
-        
+
         const res = await fetch(`${API_BASE}/sessions/${editItem.id}/checkpoints/${checkpoint.id}/remove/`, {
           method: 'DELETE',
           credentials: 'include',
@@ -430,7 +507,7 @@ const Sessions = () => {
                         <Pencil size={16} />
                       </button>
                       <button
-                        onClick={() => handleEndGame(session.id)}
+                        onClick={() => requestEndGame(session)}
                         className="px-3 py-1.5 text-sm text-red-600 hover:text-red-700 hover:bg-red-50 rounded-lg border border-red-200 transition-colors cursor-pointer"
                         title="End Session"
                       >
@@ -487,7 +564,7 @@ const Sessions = () => {
                 Edit Session
               </h2>
               <button
-                onClick={() => handleEndGame(editItem.id)}
+                onClick={() => requestEndGame(editItem)}
                 className="px-4 py-1.5 text-sm font-medium text-red-600 border border-red-300 rounded-lg cursor-pointer transition hover:bg-red-50"
               >
                 End Game
@@ -658,6 +735,18 @@ const Sessions = () => {
           </div>
         </div>
       )}
+
+      {/* ─── Confirmation Dialog ─── */}
+      <ConfirmDialog
+        open={!!confirmState}
+        title={confirmState?.title}
+        message={confirmState?.message}
+        confirmLabel={confirmState?.confirmLabel}
+        danger={confirmState?.danger}
+        theme={theme}
+        onConfirm={confirmState?.onConfirm}
+        onCancel={closeConfirm}
+      />
     </div>
   );
 };

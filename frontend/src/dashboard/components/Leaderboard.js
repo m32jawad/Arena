@@ -144,6 +144,23 @@ const Leaderboard = () => {
     }
   };
 
+  const handleBulkSetHidden = async (hidden) => {
+    if (selectedIds.size === 0) return;
+    try {
+      const ids = Array.from(selectedIds);
+      await apiFetch(`${API_BASE}/sessions/bulk-hide/`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ids, hidden }),
+      });
+      setTeams((prev) => prev.map((t) => selectedIds.has(t.id) ? { ...t, leaderboard_hidden: hidden } : t));
+      setSelectedIds(new Set());
+    } catch (err) {
+      console.error('Bulk hide error:', err);
+      alert('Failed to update leaderboard visibility for selected teams.');
+    }
+  };
+
   const toggleSelect = (id) => {
     setSelectedIds((prev) => {
       const next = new Set(prev);
@@ -233,14 +250,32 @@ const Leaderboard = () => {
           <div className="flex items-center gap-4 px-6 py-4">
             <h1 className="text-md font-semibold" style={{ color: theme.sidebar_active_text, fontFamily: headingFont }}>Detail View</h1>
             {selectedIds.size > 0 && (
-              <button
-                onClick={handleBulkDelete}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium text-white"
-                style={{ backgroundColor: '#dc2626' }}
-              >
-                <Trash2 size={15} />
-                Delete Selected ({selectedIds.size})
-              </button>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => handleBulkSetHidden(true)}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium"
+                  style={{ backgroundColor: theme.sidebar_active_bg, color: theme.sidebar_active_text }}
+                >
+                  <EyeOff size={15} />
+                  Hide Selected ({selectedIds.size})
+                </button>
+                <button
+                  onClick={() => handleBulkSetHidden(false)}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium"
+                  style={{ backgroundColor: theme.sidebar_active_bg, color: theme.sidebar_active_text }}
+                >
+                  <Eye size={15} />
+                  Show Selected
+                </button>
+                <button
+                  onClick={handleBulkDelete}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium text-white"
+                  style={{ backgroundColor: '#dc2626' }}
+                >
+                  <Trash2 size={15} />
+                  Delete Selected ({selectedIds.size})
+                </button>
+              </div>
             )}
           </div>
           

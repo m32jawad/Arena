@@ -60,6 +60,7 @@ class StationState:
         self.station_ip: str = settings.station_ip if settings.station_ip else self._get_local_ip()
         self.boot_time: float = time.time()
         self.last_hint_time: float = 0  # Cooldown tracking for hint button
+        self.reset_generation: int = 0  # Guards auto-reset against state changes during cooldown
         
         # Hardware components
         self.nfc_reader = None
@@ -498,6 +499,10 @@ async def end_current_session():
         if result:
             session_ended = result.get('session_ended', True)
             
+            # Per-station reset behaviour (configured in admin per Controller)
+            requires_staff_reset = result.get('requires_staff_reset', True)
+            auto_reset_seconds = result.get('auto_reset_seconds', 0)
+
             # Store result for RESULT screen
             state.last_result = {
                 'party_name': result.get('party_name'),
@@ -513,25 +518,32 @@ async def end_current_session():
                 'controller_name': result.get('controller_name'),
                 'session_ended': session_ended,
                 'is_end_controller': result.get('is_end_controller', False),
+                'requires_staff_reset': requires_staff_reset,
+                'auto_reset_seconds': auto_reset_seconds,
             }
-            
+
             # Switch to RESULT mode
             state.mode = StationMode.RESULT
             state.game_active_relay.turn_off()
-            
+
             # Broadcast result to frontend
             await state.broadcast({
                 'type': 'session_ended',
                 'result': state.last_result
             })
-            
+
             if session_ended:
                 logger.info(f"✅ Session fully ended: {result.get('party_name')} - {result.get('total_points')} points")
             else:
                 logger.info(f"✅ Station completed: {result.get('party_name')} - +{result.get('station_points')} pts this station")
-            
+
             # Clear current session
             state.current_session = None
+
+            # If this station doesn't require a staff card to reset, auto-reset
+            # back to READY for the next group after the configured cooldown.
+            if not requires_staff_reset:
+                asyncio.create_task(schedule_auto_reset(auto_reset_seconds))
         else:
             logger.warning(f"❌ Failed to end session for {rfid_tag}")
             await state.broadcast({
@@ -543,10 +555,43 @@ async def end_current_session():
         logger.error(f"Error ending session: {e}")
 
 
+async def schedule_auto_reset(seconds: int):
+    """Auto-reset the station to READY after a cooldown (no staff card needed).
+
+    Only fires if the station is still on the same RESULT screen when the
+    cooldown elapses — a staff reset or a new session started in the meantime
+    bumps `reset_generation` and cancels this pending reset.
+    """
+    try:
+        seconds = max(0, int(seconds))
+    except (ValueError, TypeError):
+        seconds = 0
+
+    generation = state.reset_generation
+    logger.info(f"⏲️ Auto-reset scheduled in {seconds}s (gen {generation})")
+
+    # Let the kiosk know a countdown is running.
+    await state.broadcast({
+        'type': 'auto_reset_scheduled',
+        'seconds': seconds,
+    })
+
+    await asyncio.sleep(seconds)
+
+    if state.mode == StationMode.RESULT and state.reset_generation == generation:
+        logger.info("⏲️ Auto-reset cooldown elapsed — resetting station to READY")
+        await reset_to_ready()
+    else:
+        logger.info("⏲️ Auto-reset skipped (station state changed during cooldown)")
+
+
 async def reset_to_ready():
-    """Reset station back to READY mode (called after staff scan on RESULT screen)."""
+    """Reset station back to READY mode (staff scan on RESULT screen or auto-reset)."""
     logger.info("🔄 Resetting station to READY")
-    
+
+    # Invalidate any pending auto-reset tasks
+    state.reset_generation += 1
+
     # Clear all session data
     state.current_session = None
     state.last_result = None

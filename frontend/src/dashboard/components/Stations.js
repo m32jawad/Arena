@@ -70,6 +70,12 @@ const emptyForm = {
   hint_audio: null,
   hint_audio_url: '',
   clear_hint_audio: false,
+  requires_staff_reset: true,
+  auto_reset_seconds: 20,
+  // Per-storyline audio hints
+  existingStorylineHints: [],   // [{ storyline_id, storyline_title, hint_audio }]
+  storylineHintFiles: {},       // { [storyline_id]: File }
+  storylineHintClears: {},      // { [storyline_id]: true }
 };
 
 const Stations = ({ readOnly = false }) => {
@@ -85,6 +91,7 @@ const Stations = ({ readOnly = false }) => {
   const modalSt = { backgroundColor: theme.sidebar_bg, color: theme.sidebar_active_text };
 
   const [controllers, setControllers] = useState([]);
+  const [storylines, setStorylines] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
@@ -106,12 +113,20 @@ const Stations = ({ readOnly = false }) => {
     }
   }, []);
 
+  const fetchStorylines = useCallback(async () => {
+    try {
+      const data = await apiFetch(`${API_BASE}/storylines/`);
+      setStorylines(Array.isArray(data) ? data : []);
+    } catch { /* ignore */ }
+  }, []);
+
   useEffect(() => {
     fetchControllers();
+    fetchStorylines();
     // Silent poll every 5 seconds — only metric values update, no loading flash
     const interval = setInterval(() => fetchControllers(true), 5000);
     return () => clearInterval(interval);
-  }, [fetchControllers]);
+  }, [fetchControllers, fetchStorylines]);
 
   const openAdd = () => {
     setEditing(null);
@@ -123,6 +138,7 @@ const Stations = ({ readOnly = false }) => {
   const openEdit = (ctl) => {
     setEditing(ctl);
     setForm({
+      ...emptyForm,
       name: ctl.name,
       ip_address: ctl.ip_address,
       station_minutes: ctl.station_minutes || 10,
@@ -131,9 +147,44 @@ const Stations = ({ readOnly = false }) => {
       hint_audio: null,
       hint_audio_url: ctl.hint_audio || '',
       clear_hint_audio: false,
+      requires_staff_reset: ctl.requires_staff_reset ?? true,
+      auto_reset_seconds: ctl.auto_reset_seconds ?? 20,
+      existingStorylineHints: ctl.storyline_hints || [],
+      storylineHintFiles: {},
+      storylineHintClears: {},
     });
     setFormError('');
     setShowModal(true);
+  };
+
+  /* Upload per-storyline audio hints (set or clear) for a controller */
+  const saveStorylineHints = async (controllerId) => {
+    const ids = new Set([
+      ...Object.keys(form.storylineHintFiles || {}),
+      ...Object.keys(form.storylineHintClears || {}),
+    ]);
+    for (const sid of ids) {
+      const file = form.storylineHintFiles?.[sid];
+      const clear = form.storylineHintClears?.[sid];
+      if (!file && !clear) continue;
+      const hfd = new FormData();
+      hfd.append('storyline_id', sid);
+      if (file) {
+        hfd.append('hint_audio', file);
+      } else if (clear) {
+        hfd.append('clear', 'true');
+      }
+      const res = await fetch(`${API_BASE}/controllers/${controllerId}/storyline-hints/`, {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'X-CSRFToken': getCookie('csrftoken') || '' },
+        body: hfd,
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.error || 'Failed to save storyline hint');
+      }
+    }
   };
 
   const handleSubmit = async (e) => {
@@ -146,6 +197,8 @@ const Stations = ({ readOnly = false }) => {
       fd.append('station_minutes', String(form.station_minutes || 10));
       fd.append('is_start', form.is_start);
       fd.append('is_end', form.is_end);
+      fd.append('requires_staff_reset', form.requires_staff_reset);
+      fd.append('auto_reset_seconds', String(form.auto_reset_seconds ?? 20));
       if (form.hint_audio) {
         fd.append('hint_audio', form.hint_audio);
       } else if (form.clear_hint_audio) {
@@ -164,6 +217,9 @@ const Stations = ({ readOnly = false }) => {
         const data = await res.json();
         throw new Error(data.error || 'Request failed');
       }
+      const saved = await res.json();
+      // Save per-storyline audio hints against the (now-existing) controller
+      await saveStorylineHints(saved.id);
       setShowModal(false);
       fetchControllers();
     } catch (err) {
@@ -244,14 +300,19 @@ const Stations = ({ readOnly = false }) => {
                     <div className="flex items-center gap-2">
                       <h2 className="text-lg font-medium" style={{ ...headLabelSt, fontFamily: headingFont }}>{ctl.name}</h2>
                       {ctl.is_start && (
-                        <span className="hidden text-xs font-bold px-2 py-0.5 rounded-full" style={{ backgroundColor: '#22c55e20', color: '#22c55e', border: '1px solid #22c55e50' }}>START</span>
+                        <span className="text-xs font-bold px-2 py-0.5 rounded-full" style={{ backgroundColor: '#22c55e20', color: '#22c55e', border: '1px solid #22c55e50' }}>START</span>
                       )}
                       {ctl.is_end && (
-                        <span className="hidden   text-xs font-bold px-2 py-0.5 rounded-full" style={{ backgroundColor: '#ef444420', color: '#ef4444', border: '1px solid #ef444450' }}>END</span>
+                        <span className="text-xs font-bold px-2 py-0.5 rounded-full" style={{ backgroundColor: '#ef444420', color: '#ef4444', border: '1px solid #ef444450' }}>END ROOM</span>
                       )}
                     </div>
                     <div className="text-xs mt-0.5" style={labelSt}>IP: {ctl.ip_address}</div>
                     <div className="text-xs mt-0.5" style={labelSt}>Station Time: {ctl.station_minutes || 0} min</div>
+                    <div className="text-xs mt-0.5" style={labelSt}>
+                      Reset: {ctl.requires_staff_reset === false
+                        ? `Auto (${ctl.auto_reset_seconds ?? 0}s cooldown)`
+                        : 'Staff card required'}
+                    </div>
                   </div>
                   {!readOnly && (
                     <div className="flex items-center ml-auto gap-1">
@@ -403,26 +464,62 @@ const Stations = ({ readOnly = false }) => {
                     type="checkbox"
                     checked={form.is_start}
                     onChange={(e) => setForm({ ...form, is_start: e.target.checked, ...(e.target.checked ? { is_end: false } : {}) })}
-                    className="w-4 h-4 rounded hidden"
+                    className="w-4 h-4 rounded"
                     style={{ accentColor: '#22c55e' }}
                   />
-                  <span className="hidden text-sm font-medium" style={{ color: '#22c55e' }}>Start Controller</span>
+                  <span className="text-sm font-medium" style={{ color: '#22c55e' }}>Start Room</span>
                 </label>
                 <label className="flex items-center gap-2 cursor-pointer">
                   <input
                     type="checkbox"
                     checked={form.is_end}
                     onChange={(e) => setForm({ ...form, is_end: e.target.checked, ...(e.target.checked ? { is_start: false } : {}) })}
-                    className="w-4 h-4 hidden rounded"
+                    className="w-4 h-4 rounded"
                     style={{ accentColor: '#ef4444' }}
                   />
-                  <span className="hidden text-sm font-medium" style={{ color: '#ef4444' }}>End Controller</span>
+                  <span className="text-sm font-medium" style={{ color: '#ef4444' }}>End Room (final)</span>
                 </label>
               </div>
+              {form.is_end && (
+                <div className="text-xs -mt-2 px-3 py-2 rounded-lg" style={{ backgroundColor: theme.sidebar_active_bg, color: theme.sidebar_text }}>
+                  Players must complete <b>all other rooms</b> before this final room can be started. Completing it finishes the game.
+                </div>
+              )}
 
-              {/* Hint Audio */}
+              {/* Reset behaviour between groups */}
+              <div className="rounded-lg border p-3" style={{ borderColor: theme.sidebar_active_bg }}>
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={form.requires_staff_reset}
+                    onChange={(e) => setForm({ ...form, requires_staff_reset: e.target.checked })}
+                    className="w-4 h-4 rounded"
+                    style={{ accentColor: primaryColor }}
+                  />
+                  <span className="text-sm font-medium" style={headLabelSt}>Require staff card swipe to reset between groups</span>
+                </label>
+                <p className="text-xs mt-1 ml-6" style={labelSt}>
+                  When enabled, a staff card must be scanned to make this station ready for the next group.
+                </p>
+                {!form.requires_staff_reset && (
+                  <div className="mt-3 ml-6 flex items-center gap-2">
+                    <label className="text-xs font-medium" style={labelSt}>Auto-reset cooldown (seconds)</label>
+                    <input
+                      type="number"
+                      min="0"
+                      value={form.auto_reset_seconds}
+                      onChange={(e) => setForm({ ...form, auto_reset_seconds: e.target.value })}
+                      className="w-24 p-2 border rounded text-sm"
+                      style={inputSt}
+                    />
+                  </div>
+                )}
+              </div>
+
+              {/* Hint Audio — default / fallback */}
               <div>
-                <label className="text-xs font-medium block mb-1" style={labelSt}>Hint Audio (optional)</label>
+                <label className="text-xs font-medium block mb-1" style={labelSt}>Default Hint Audio (optional)</label>
+                <p className="text-xs mb-1" style={labelSt}>Used when the player's storyline has no specific hint below.</p>
                 {form.hint_audio_url && !form.clear_hint_audio && !form.hint_audio && (
                   <div className="flex items-center gap-2 mb-2 text-sm" style={labelSt}>
                     <span className="truncate max-w-xs">{form.hint_audio_url.split('/').pop()}</span>
@@ -443,6 +540,65 @@ const Stations = ({ readOnly = false }) => {
                   style={inputSt}
                 />
               </div>
+
+              {/* Per-storyline Hint Audio */}
+              {storylines.length > 0 && (
+                <div>
+                  <label className="text-xs font-medium block mb-1" style={labelSt}>Per-Storyline Hint Audio (optional)</label>
+                  <p className="text-xs mb-2" style={labelSt}>
+                    Set a different audio hint for this station depending on the player's storyline.
+                  </p>
+                  <div className="space-y-3">
+                    {storylines.map((s) => {
+                      const existing = (form.existingStorylineHints || []).find((h) => h.storyline_id === s.id);
+                      const pendingFile = form.storylineHintFiles?.[s.id];
+                      const cleared = form.storylineHintClears?.[s.id];
+                      const showExisting = existing && existing.hint_audio && !pendingFile && !cleared;
+                      return (
+                        <div key={s.id} className="border rounded-lg p-2" style={{ borderColor: theme.sidebar_active_bg }}>
+                          <div className="text-xs font-medium mb-1" style={headLabelSt}>{s.title}</div>
+                          {showExisting && (
+                            <div className="flex items-center gap-2 mb-1 text-xs" style={labelSt}>
+                              <span className="truncate max-w-[240px]">{existing.hint_audio.split('/').pop()}</span>
+                              <button
+                                type="button"
+                                onClick={() => setForm({
+                                  ...form,
+                                  storylineHintClears: { ...form.storylineHintClears, [s.id]: true },
+                                  storylineHintFiles: { ...form.storylineHintFiles, [s.id]: null },
+                                })}
+                                className="text-red-500 underline"
+                              >
+                                Remove
+                              </button>
+                            </div>
+                          )}
+                          {pendingFile && (
+                            <div className="text-xs mb-1 text-green-600 truncate max-w-[280px]">New: {pendingFile.name}</div>
+                          )}
+                          {cleared && !pendingFile && (
+                            <div className="text-xs mb-1 text-red-500">Will be removed on save</div>
+                          )}
+                          <input
+                            type="file"
+                            accept="audio/*"
+                            onChange={(e) => {
+                              const file = e.target.files[0] || null;
+                              setForm({
+                                ...form,
+                                storylineHintFiles: { ...form.storylineHintFiles, [s.id]: file },
+                                storylineHintClears: { ...form.storylineHintClears, [s.id]: false },
+                              });
+                            }}
+                            className="w-full p-1.5 border rounded text-xs"
+                            style={inputSt}
+                          />
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
 
               {formError && <div className="text-sm text-red-600">{formError}</div>}
 

@@ -271,6 +271,32 @@ export default function SignUp() {
     }
   }, [step]);
 
+  /* Reset the whole form back to the start for the next group */
+  const resetForm = useCallback(() => {
+    setPartyName("");
+    setEmail("");
+    setTeamSize("");
+    setReceiveOffers(false);
+    setSelectedStoryline(null);
+    setViewingStory(null);
+    setSelectedGroup(null);
+    setGroupPhoto(null);
+    setSelfieBlob(null);
+    setSelfiePreview(null);
+    setSelectedAvatar(null);
+    setSubmitting(false);
+    setSignupDone(false);
+    setStep(1);
+  }, []);
+
+  /* After a successful signup, auto-return to the name-entry page (~8s)
+     so the kiosk is ready for the next group without a manual refresh. */
+  useEffect(() => {
+    if (!signupDone) return;
+    const t = setTimeout(() => { resetForm(); }, 8000);
+    return () => clearTimeout(t);
+  }, [signupDone, resetForm]);
+
   /* ─── Step 3: Group Selection with Avatars ─── */
   if (step === 3) {
     /* Success screen after signup */
@@ -287,6 +313,14 @@ export default function SignUp() {
             </div>
             <h2 className="text-2xl font-bold mb-2" style={{ color: appTheme.font_color }}>Request Submitted!</h2>
             <p style={{ color: `${appTheme.font_color}99` }} className="text-sm">Your signup is pending approval. You'll be notified once approved.</p>
+            <button
+              onClick={resetForm}
+              className="mt-6 px-6 py-2.5 rounded-lg text-sm font-semibold"
+              style={btnStyle}
+            >
+              Sign up another group
+            </button>
+            <p style={{ color: `${appTheme.font_color}66` }} className="text-xs mt-3">Returning to the start automatically…</p>
           </div>
         </div>
       );

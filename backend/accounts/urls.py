@@ -18,6 +18,7 @@ urlpatterns = [
     path('controllers/', views.controller_list_create, name='controller-list-create'),
     path('controllers/<int:pk>/', views.controller_detail, name='controller-detail'),
     path('controllers/<int:pk>/restart-service/', views.controller_restart_service, name='controller-restart-service'),
+    path('controllers/<int:pk>/storyline-hints/', views.controller_storyline_hints, name='controller-storyline-hints'),
     path('controller-test/', views.controller_test_page, name='controller-test'),
 
     # Pending Signup
@@ -72,5 +73,6 @@ urlpatterns = [
     path('leaderboard/', views.admin_leaderboard, name='admin-leaderboard'),
     path('sessions/bulk-delete/', views.sessions_bulk_delete, name='sessions-bulk-delete'),
     path('sessions/<int:pk>/toggle-leaderboard/', views.toggle_leaderboard_hidden, name='toggle-leaderboard-hidden'),
+    path('sessions/bulk-hide/', views.sessions_bulk_set_hidden, name='sessions-bulk-hide'),
     path('sessions/<int:pk>/delete/', views.session_delete, name='session-delete'),
 ]

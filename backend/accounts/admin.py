@@ -1,5 +1,5 @@
 from django.contrib import admin
-from .models import GeneralSetting, DashboardTheme, Storyline, PendingSignup, Controller, Checkpoint, StaffProfile
+from .models import GeneralSetting, DashboardTheme, Storyline, PendingSignup, Controller, Checkpoint, StationHint, StaffProfile
 
 
 @admin.register(GeneralSetting)
@@ -43,6 +43,12 @@ class ControllerAdmin(admin.ModelAdmin):
 class CheckpointAdmin(admin.ModelAdmin):
     list_display = ('session', 'controller', 'cleared_at')
     list_filter = ('cleared_at',)
+
+
+@admin.register(StationHint)
+class StationHintAdmin(admin.ModelAdmin):
+    list_display = ('controller', 'storyline', 'hint_audio', 'updated_at')
+    list_filter = ('controller', 'storyline')
 
 
 @admin.register(StaffProfile)

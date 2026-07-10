@@ -12,6 +12,32 @@ Arena/
 └── .gitignore         # Git ignore rules
 ```
 
+## Clone with Token (Windows)
+
+If you are on a Windows machine where GitHub is not logged in, clone using a
+[GitHub Personal Access Token (PAT)](https://github.com/settings/tokens):
+
+```bat
+git clone https://<YOUR_TOKEN>@github.com/m32jawad/Arena.git
+```
+
+Replace `<YOUR_TOKEN>` with your actual PAT.  No GitHub login or credential
+manager is needed.
+
+> **Tip:** Generate a PAT at **GitHub → Settings → Developer settings →
+> Personal access tokens → Tokens (classic)** and grant it the `repo` scope.
+
+> **Security warning:** Embedding a token in the URL may expose it in your
+> shell history and system process list.  After cloning, consider removing the
+> token from the remote URL with:
+> ```bat
+> git remote set-url origin https://github.com/m32jawad/Arena.git
+> ```
+> You can then store credentials safely using
+> [Git Credential Manager](https://github.com/git-ecosystem/git-credential-manager).
+
+---
+
 ## Prerequisites
 
 - Node.js (v14 or higher)

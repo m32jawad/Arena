@@ -171,7 +171,8 @@ export default function StationPage() {
   const sessionRef    = useRef(null);  // stable ref for timer callback
   const countdownRef  = useRef(null);
   const hintAudioRef  = useRef(null);  // ref for hint audio element
-  const autoResetRef  = useRef(null);  // interval for auto-reset countdown
+  const autoResetRef  = useRef(null);  // interval for auto-reset countdown display
+  const autoResetTimerRef = useRef(null);  // timeout that fires the actual auto-reset
 
   // keep sessionRef in sync
   useEffect(() => { sessionRef.current = session; }, [session]);
@@ -196,21 +197,27 @@ export default function StationPage() {
   // ── auto-reset countdown (stations that don't require a staff card) ──
   useEffect(() => {
     clearInterval(autoResetRef.current);
+    clearTimeout(autoResetTimerRef.current);
     if (appState === STATES.RESULT && result && result.requires_staff_reset === false) {
       const secs = Number(result.auto_reset_seconds);
       const start = Number.isFinite(secs) && secs >= 0 ? secs : 0;
       setAutoResetRemaining(start);
       autoResetRef.current = setInterval(() => {
-        setAutoResetRemaining((prev) => {
-          if (prev == null) return prev;
-          if (prev <= 1) { clearInterval(autoResetRef.current); return 0; }
-          return prev - 1;
-        });
+        setAutoResetRemaining((prev) => (prev == null ? prev : Math.max(0, prev - 1)));
       }, 1000);
+      if (!result.station_driven_reset) {
+        autoResetTimerRef.current = setTimeout(() => {
+          clearInterval(autoResetRef.current);
+          resetToReady();
+        }, start * 1000);
+      }
     } else {
       setAutoResetRemaining(null);
     }
-    return () => clearInterval(autoResetRef.current);
+    return () => {
+      clearInterval(autoResetRef.current);
+      clearTimeout(autoResetTimerRef.current);
+    };
   }, [appState, result]);
 
   // ── fetch controllers on mount ──────────────
@@ -432,6 +439,7 @@ export default function StationPage() {
                     controller_name: data.last_result.controller_name,
                     requires_staff_reset: data.last_result.requires_staff_reset,
                     auto_reset_seconds: data.last_result.auto_reset_seconds,
+                    station_driven_reset: true,
                   });
                   setAppState(STATES.RESULT);
                 } else if (data.station_mode === 'ready') {
@@ -482,6 +490,9 @@ export default function StationPage() {
                   controller_name: endResult.controller_name,
                   requires_staff_reset: endResult.requires_staff_reset,
                   auto_reset_seconds: endResult.auto_reset_seconds,
+                  // The Pi schedules its own auto-reset and broadcasts `station_reset`;
+                  // we only show the countdown, we don't fire the reset ourselves.
+                  station_driven_reset: true,
                 };
                 clearInterval(countdownRef.current);
                 if (hintAudioRef.current) { hintAudioRef.current.pause(); hintAudioRef.current = null; }
@@ -666,6 +677,8 @@ export default function StationPage() {
         current_controller_index: data.current_controller_index,
         total_controllers:     data.total_controllers,
         controller_name:       data.controller_name,
+        requires_staff_reset:  data.requires_staff_reset,
+        auto_reset_seconds:    data.auto_reset_seconds,
       } : {
         party_name: sess.party_name,
         points: null,
@@ -735,6 +748,18 @@ export default function StationPage() {
     doStop(session);
   }
 
+  // ── RESULT → READY (staff card, or auto-reset cooldown) ──
+  function resetToReady() {
+    if (hintAudioRef.current) { hintAudioRef.current.pause(); hintAudioRef.current = null; }
+    setHintPlaying(false);
+    transitionTo(STATES.READY, () => {
+      setStaffRfid(''); setStaffError('');
+      setResult(null); setSession(null);
+      setRfidInput(''); setRfidError('');
+      setStorylineHint(''); setHintAudioUrl('');
+    });
+  }
+
   // ── RESULT: staff RFID reset ─────────────────
   async function handleStaffRfid() {
     const rfid = staffRfid.trim();
@@ -748,14 +773,7 @@ export default function StationPage() {
       });
       const data = await res.json();
       if (res.ok && data.is_staff) {
-        if (hintAudioRef.current) { hintAudioRef.current.pause(); hintAudioRef.current = null; }
-        setHintPlaying(false);
-        transitionTo(STATES.READY, () => {
-          setStaffRfid(''); setStaffError('');
-          setResult(null); setSession(null);
-          setRfidInput(''); setRfidError('');
-          setStorylineHint(''); setHintAudioUrl('');
-        });
+        resetToReady();
       } else {
         setStaffError(data.error || 'Not a valid staff RFID.');
       }

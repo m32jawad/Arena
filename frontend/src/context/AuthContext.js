@@ -78,16 +78,15 @@ export function AuthProvider({ children }) {
       return null;
     };
 
-    const defaultOptions = {
+    const res = await fetch(url, {
       credentials: 'include',
+      ...options,
       headers: {
         'Content-Type': 'application/json',
         'X-CSRFToken': getCookie('csrftoken') || '',
         ...(options.headers || {}),
       },
-    };
-
-    const res = await fetch(url, { ...defaultOptions, ...options });
+    });
     if (!res.ok) {
       throw new Error(`API request failed: ${res.status}`);
     }
